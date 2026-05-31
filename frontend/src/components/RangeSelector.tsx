@@ -5,6 +5,7 @@ interface RangeSelectorProps {
   onChange: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   allowedHands?: string[];
   readOnly?: boolean;
+  deadCards?: string[];
 }
 
 const VALUES = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -25,10 +26,60 @@ const HAND_RANKING = [
   "T4o", "53o", "82o", "J2o", "93o", "T3o", "72o", "62o", "T2o", "92o", "43o", "52o", "42o", "32o"
 ];
 
-const getComboCount = (hand: string) => {
-  if (hand.length === 2) return 6; // Pair
-  if (hand[2] === 's') return 4; // Suited
-  return 12; // Offsuit
+export const getComboCount = (hand: string, deadCards: string[] = []) => {
+  const deadByRank: Record<string, string[]> = {};
+  deadCards.forEach(card => {
+    if (card.length === 2) {
+      const r = card[0];
+      const s = card[1];
+      if (!deadByRank[r]) deadByRank[r] = [];
+      if (!deadByRank[r].includes(s)) deadByRank[r].push(s);
+    }
+  });
+
+  const getDeadSuits = (rank: string) => deadByRank[rank] || [];
+
+  if (hand.length === 4) {
+    // Specific combo like AhKh
+    const r1 = hand[0];
+    const s1 = hand[1];
+    const r2 = hand[2];
+    const s2 = hand[3];
+    const isDead = getDeadSuits(r1).includes(s1) || getDeadSuits(r2).includes(s2) || (r1 === r2 && s1 === s2);
+    return isDead ? 0 : 1;
+  }
+
+  if (hand.length === 2) {
+    // Pair
+    const rank = hand[0];
+    const deadCount = getDeadSuits(rank).length;
+    const avail = 4 - deadCount;
+    return avail >= 2 ? (avail * (avail - 1)) / 2 : 0;
+  }
+
+  const rank1 = hand[0];
+  const rank2 = hand[1];
+  const isSuited = hand[2] === 's';
+
+  const deadSuits1 = getDeadSuits(rank1);
+  const deadSuits2 = getDeadSuits(rank2);
+
+  const suits = ['h', 'd', 'c', 's'];
+  let availSuited = 0;
+  for (const s of suits) {
+    if (!deadSuits1.includes(s) && !deadSuits2.includes(s)) {
+      availSuited++;
+    }
+  }
+
+  if (isSuited) {
+    return availSuited;
+  } else {
+    // Offsuit
+    const avail1 = 4 - deadSuits1.length;
+    const avail2 = 4 - deadSuits2.length;
+    return (avail1 * avail2) - availSuited;
+  }
 };
 
 export const RangeSelector: React.FC<RangeSelectorProps> = ({
@@ -36,6 +87,7 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
   onChange,
   allowedHands,
   readOnly = false,
+  deadCards = [],
 }) => {
   const [currentWeight, setCurrentWeight] = useState<number>(100);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -101,7 +153,7 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
     
     for (const hand of HAND_RANKING) {
       if (!allowedHands || allowedHands.includes(hand)) {
-        const combos = getComboCount(hand);
+        const combos = getComboCount(hand, deadCards);
         if (currentCombos + combos <= targetCombos) {
           newHands[hand] = currentWeight;
           currentCombos += combos;
@@ -124,11 +176,11 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
     let total = 0;
     for (const [hand, weight] of Object.entries(selectedHands)) {
       if (weight > 0) {
-        total += getComboCount(hand) * (weight / 100);
+        total += getComboCount(hand, deadCards) * (weight / 100);
       }
     }
     return total;
-  }, [selectedHands]);
+  }, [selectedHands, deadCards]);
   const currentPercent = Math.round((currentTotalCombos / 1326) * 100);
 
   return (
@@ -219,10 +271,20 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
                 title={`${hand}${isSelected ? ` (${weight}%)` : ''}`}
               >
                 {hand}
+                <div style={{
+                  position: 'absolute',
+                  bottom: '2px',
+                  right: '2px',
+                  fontSize: '10px',
+                  opacity: 0.7,
+                  fontWeight: 'normal'
+                }}>
+                  {getComboCount(hand, deadCards)}
+                </div>
                 {isSelected && weight < 100 && (
                   <div style={{
                     position: 'absolute',
-                    bottom: '2px',
+                    top: '2px',
                     right: '2px',
                     fontSize: '11px',
                     color: `hsl(${(weight * 120) / 100}, 100%, 60%)`,

@@ -6,9 +6,10 @@ interface CategoryFilterProps {
   baseRange: Record<string, number>;
   board: string[];
   onChange: (newRange: Record<string, number>) => void;
+  deadCards?: string[];
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, deadCards = [] }) => {
   const [categories, setCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -47,7 +48,9 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         // Sort categories by predefined order
         const order = [
           'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
-          'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 'OnePair', 'HighCard',
+          'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
+          'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
+          'OnePair', 'HighCard',
           'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'Oesd', 'Gutshot',
           'BackdoorFlushDraw', 'BackdoorStraightDraw', 'Nothing'
         ];
@@ -161,6 +164,13 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'Trips': 'Brelan (Trips)',
     'TwoPairBothHoleCards': 'Double Paire',
     'TwoPairOneHoleCard': 'Double Paire (1 carte board)',
+    'Overpair': 'Overpair',
+    'TopPair': 'Top Pair',
+    'SecondPair': 'Seconde Paire',
+    'ThirdPair': 'Troisième Paire',
+    'IntermediatePair': 'Paire Intermédiaire',
+    'Underpair': 'Underpair',
+    'SmallPair': 'Petite Paire',
     'OnePair': 'Paire',
     'HighCard': 'Hauteur',
     'Oesd': 'OESD',
@@ -218,6 +228,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
           onChange={() => {}} 
           allowedHands={allowedHands}
           readOnly={true}
+          deadCards={deadCards}
         />
       </div>
 

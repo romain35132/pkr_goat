@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CardSelector } from './components/CardSelector';
-import { RangeSelector } from './components/RangeSelector';
+import { RangeSelector, getComboCount } from './components/RangeSelector';
 import { CategoryFilter } from './components/CategoryFilter';
 
 interface EquityResult {
@@ -87,6 +87,17 @@ const PokerEquityCalculator: React.FC = () => {
   
   const currentStreet = getCurrentStreet(boardCards);
   const currentRange = ranges[currentStreet];
+
+  const opponentCombos = useMemo(() => {
+    let total = 0;
+    const deadCards = [...playerCards, ...boardCards];
+    for (const [hand, weight] of Object.entries(currentRange)) {
+      if (weight > 0) {
+        total += getComboCount(hand, deadCards) * (weight / 100);
+      }
+    }
+    return total;
+  }, [currentRange, playerCards, boardCards]);
 
   const handleValidateStreet = () => {
     // Validation is mostly visual now, as ranges are already isolated per street.
@@ -241,7 +252,7 @@ const PokerEquityCalculator: React.FC = () => {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <label style={{ fontWeight: 'bold' }}>
-              Range Adverse - {currentStreet} ({Object.keys(currentRange).length} mains)
+              Range Adverse - {currentStreet} ({Object.keys(currentRange).length} mains, {opponentCombos % 1 !== 0 ? opponentCombos.toFixed(1) : opponentCombos} combos)
             </label>
             <button
               type="button"
@@ -266,12 +277,14 @@ const PokerEquityCalculator: React.FC = () => {
               <RangeSelector 
                 selectedHands={currentRange} 
                 onChange={handleRangeChange} 
+                deadCards={[...playerCards, ...boardCards]}
               />
             ) : (
               <CategoryFilter 
                 baseRange={getBaseRangeForCurrentStreet()}
                 board={boardCards}
                 onChange={handleRangeChange}
+                deadCards={[...playerCards, ...boardCards]}
               />
             )}
           </div>

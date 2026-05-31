@@ -14,7 +14,14 @@ pub enum HandCategory {
     Trips,
     TwoPairBothHoleCards,
     TwoPairOneHoleCard,
-    OnePair,
+    Overpair,
+    TopPair,
+    SecondPair,
+    ThirdPair,
+    IntermediatePair,
+    Underpair,
+    SmallPair,
+    OnePair, // Keep it for fallback or generic
     HighCard,
     
     Oesd,
@@ -39,27 +46,34 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     let hole_val1 = hole_cards.0.value as u8;
     let hole_val2 = hole_cards.1.value as u8;
     
+    let mut val_counts = HashMap::new();
+    for c in &cards {
+        *val_counts.entry(c.value as u8).or_insert(0) += 1;
+    }
+
     let made_hand = match rank {
         Rank::StraightFlush(_) => HandCategory::StraightFlush,
         Rank::FourOfAKind(_) => HandCategory::FourOfAKind,
         Rank::FullHouse(_) => HandCategory::FullHouse,
         Rank::Flush(_) => HandCategory::Flush,
         Rank::Straight(_) => HandCategory::Straight,
-        Rank::ThreeOfAKind(val) => {
-            let val = val as u8;
-            if hole_val1 == hole_val2 && hole_val1 == val {
+        Rank::ThreeOfAKind(_) => {
+            let mut trips_val = 0;
+            for (&v, &count) in &val_counts {
+                if count >= 3 {
+                    trips_val = v;
+                    break;
+                }
+            }
+            if hole_val1 == hole_val2 && hole_val1 == trips_val {
                 HandCategory::Set
-            } else if hole_val1 == val || hole_val2 == val {
+            } else if hole_val1 == trips_val || hole_val2 == trips_val {
                 HandCategory::Trips
             } else {
                 HandCategory::HighCard
             }
         },
         Rank::TwoPair(_) => {
-            let mut val_counts = HashMap::new();
-            for c in &cards {
-                *val_counts.entry(c.value as u8).or_insert(0) += 1;
-            }
             let mut pairs = Vec::new();
             for (&v, &count) in &val_counts {
                 if count >= 2 {
@@ -78,17 +92,81 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
                 } else if h1_in || h2_in {
                     HandCategory::TwoPairOneHoleCard
                 } else {
-                    HandCategory::HighCard
+                    // Two pair on board, check if hole cards make a better pair
+                    let mut board_values: Vec<u8> = board.iter().map(|c| c.value as u8).collect();
+                    board_values.sort_unstable_by(|a, b| b.cmp(a));
+                    board_values.dedup();
+
+                    let val = if hole_val1 > hole_val2 { hole_val1 } else { hole_val2 };
+                    let is_pocket_pair = hole_val1 == hole_val2;
+                    let board_pos = board_values.iter().position(|&v| v == val);
+
+                    if is_pocket_pair {
+                        if val > board_values[0] {
+                            HandCategory::Overpair
+                        } else if val < *board_values.last().unwrap() {
+                            HandCategory::Underpair
+                        } else {
+                            HandCategory::IntermediatePair
+                        }
+                    } else if let Some(pos) = board_pos {
+                        match pos {
+                            0 => HandCategory::TopPair,
+                            1 => HandCategory::SecondPair,
+                            2 => HandCategory::ThirdPair,
+                            _ => HandCategory::SmallPair,
+                        }
+                    } else {
+                        HandCategory::HighCard
+                    }
                 }
             } else {
                 HandCategory::HighCard
             }
         },
-        Rank::OnePair(val) => {
-            let val = val as u8;
-            if hole_val1 == val || hole_val2 == val {
-                HandCategory::OnePair
+        Rank::OnePair(_) => {
+            let mut pair_val = 0;
+            for (&v, &count) in &val_counts {
+                if count >= 2 {
+                    pair_val = v;
+                    break;
+                }
+            }
+            
+            let mut board_values: Vec<u8> = board.iter().map(|c| c.value as u8).collect();
+            board_values.sort_unstable_by(|a, b| b.cmp(a));
+            board_values.dedup();
+
+            let is_pocket_pair = hole_val1 == hole_val2 && hole_val1 == pair_val;
+            let is_hole_card_pair = hole_val1 == pair_val || hole_val2 == pair_val;
+
+            if is_hole_card_pair {
+                if board_values.is_empty() {
+                    if is_pocket_pair { HandCategory::Overpair } else { HandCategory::OnePair }
+                } else {
+                    let board_pos = board_values.iter().position(|&v| v == pair_val);
+
+                    if is_pocket_pair {
+                        if pair_val > board_values[0] {
+                            HandCategory::Overpair
+                        } else if pair_val < *board_values.last().unwrap() {
+                            HandCategory::Underpair
+                        } else {
+                            HandCategory::IntermediatePair
+                        }
+                    } else if let Some(pos) = board_pos {
+                        match pos {
+                            0 => HandCategory::TopPair,
+                            1 => HandCategory::SecondPair,
+                            2 => HandCategory::ThirdPair,
+                            _ => HandCategory::SmallPair,
+                        }
+                    } else {
+                        HandCategory::OnePair
+                    }
+                }
             } else {
+                // Pair is on the board
                 HandCategory::HighCard
             }
         },
@@ -170,7 +248,18 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     if oesd && fd { categories.push(HandCategory::OesdAndFd); }
     if gutshot && fd { categories.push(HandCategory::GutshotAndFd); }
     
-    let has_pair = matches!(made_hand, HandCategory::OnePair | HandCategory::TwoPairBothHoleCards | HandCategory::TwoPairOneHoleCard);
+    let has_pair = matches!(made_hand, 
+        HandCategory::OnePair | 
+        HandCategory::Overpair | 
+        HandCategory::TopPair | 
+        HandCategory::SecondPair | 
+        HandCategory::ThirdPair | 
+        HandCategory::IntermediatePair | 
+        HandCategory::Underpair | 
+        HandCategory::SmallPair |
+        HandCategory::TwoPairBothHoleCards | 
+        HandCategory::TwoPairOneHoleCard
+    );
     if has_pair && (fd || oesd || gutshot) {
         categories.push(HandCategory::ComboDraw);
     }
