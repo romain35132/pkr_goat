@@ -108,6 +108,8 @@ pub async fn calculate_equity_handler(
 pub struct CategorizeRequest {
     pub opponent_range: String,
     pub board: String,
+    #[serde(default)]
+    pub dead_cards: String,
 }
 
 #[derive(Serialize)]
@@ -158,9 +160,28 @@ pub async fn categorize_handler(
         }
     }
 
+    let mut dead = Vec::new();
+    let dead_str = payload.dead_cards.trim();
+    if !dead_str.is_empty() {
+        let parts: Vec<&str> = dead_str.split_whitespace().collect();
+        for part in parts {
+            match parse_card(part) {
+                Ok(c) => dead.push(c),
+                Err(e) => return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response(),
+            }
+        }
+    }
+
     let mut map: HashMap<HandCategory, Vec<CategorizedHand>> = HashMap::new();
 
     for (hole_cards, weight) in opponent_range {
+        let c1 = hole_cards.0;
+        let c2 = hole_cards.1;
+        
+        if dead.contains(&c1) || dead.contains(&c2) || board.contains(&c1) || board.contains(&c2) {
+            continue;
+        }
+
         let categories = categorize_hand(&hole_cards, &board);
         let hand_str = format!("{}{}", hole_cards.0, hole_cards.1);
         

@@ -35,6 +35,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
           body: JSON.stringify({
             opponent_range: opponentRange,
             board: board.join(' '),
+            dead_cards: deadCards.join(' '),
           }),
         });
 
@@ -50,8 +51,9 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
           'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
           'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
           'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
-          'OnePair', 'HighCard',
-          'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'Oesd', 'Gutshot',
+          'OnePair', 
+          'HighCard', 'Overcard',
+          'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'Oesd2Card', 'Oesd1Card', 'Gutshot2Card', 'Gutshot1Card',
           'BackdoorFlushDraw', 'BackdoorStraightDraw', 'Nothing'
         ];
         
@@ -75,7 +77,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     };
 
     fetchCategories();
-  }, [baseRange, board.join(' ')]);
+  }, [baseRange, board.join(' '), deadCards.join(' ')]);
 
   // Recompute the effective range whenever active categories or hands change
   useEffect(() => {
@@ -173,9 +175,12 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'SmallPair': 'Petite Paire',
     'OnePair': 'Paire',
     'HighCard': 'Hauteur',
-    'Oesd': 'OESD',
+    'Overcard': 'Overcard',
+    'Oesd2Card': 'OESD (2card)',
+    'Oesd1Card': 'OESD (1card)',
     'FlushDraw': 'Flushdraw',
-    'Gutshot': 'Gutshot',
+    'Gutshot2Card': 'Gutshot (2card)',
+    'Gutshot1Card': 'Gutshot (1card)',
     'ComboDraw': 'Combo draw',
     'OesdAndFd': 'OESD + FD',
     'GutshotAndFd': 'Gutshot + FD',
@@ -184,42 +189,68 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'Nothing': 'Nothing'
   };
 
+  const madeHandsSet = new Set([
+    'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
+    'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
+    'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
+    'OnePair'
+  ]);
+
+  const mainsFaites = categories.filter(c => madeHandsSet.has(c.category));
+  const leReste = categories.filter(c => !madeHandsSet.has(c.category));
+
+  const renderCategory = (cat: CategoryResult) => {
+    const isActive = activeCategories[cat.category];
+    const comboCount = cat.hands.reduce((acc, h) => acc + h.weight / 100, 0);
+    const displayCount = comboCount % 1 === 0 ? comboCount : comboCount.toFixed(1);
+    
+    return (
+      <div 
+        key={cat.category}
+        onClick={() => handleToggle(cat.category)}
+        onContextMenu={(e) => handleContextMenu(e, cat)}
+        style={{
+          padding: '8px 12px',
+          border: '1px solid',
+          borderColor: isActive ? '#27ae60' : '#bdc3c7',
+          backgroundColor: isActive ? '#e8f8f5' : '#ecf0f1',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}
+      >
+        <input 
+          type="checkbox" 
+          checked={isActive} 
+          onChange={() => {}} // handled by parent div
+          style={{ pointerEvents: 'none' }}
+        />
+        <span>{categoryNames[cat.category] || cat.category} ({displayCount})</span>
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <p style={{ margin: 0, fontSize: '14px', color: '#7f8c8d' }}>
         Filtrez les mains qui continuent (clic droit pour le détail)
       </p>
+
+      <p style={{ margin: 0, fontSize: '14px', color: '#2c3e50', fontWeight: 'bold' }}>
+        Mains faites (pair+)
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+        {mainsFaites.map(renderCategory)}
+      </div>
+
+      <p style={{ margin: 0, fontSize: '14px', color: '#2c3e50', fontWeight: 'bold' }}>
+        Le reste
+      </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-        {categories.map(cat => {
-          const isActive = activeCategories[cat.category];
-          return (
-            <div 
-              key={cat.category}
-              onClick={() => handleToggle(cat.category)}
-              onContextMenu={(e) => handleContextMenu(e, cat)}
-              style={{
-                padding: '8px 12px',
-                border: '1px solid',
-                borderColor: isActive ? '#27ae60' : '#bdc3c7',
-                backgroundColor: isActive ? '#e8f8f5' : '#ecf0f1',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <input 
-                type="checkbox" 
-                checked={isActive} 
-                onChange={() => {}} // handled by parent div
-                style={{ pointerEvents: 'none' }}
-              />
-              <span>{categoryNames[cat.category] || cat.category} ({cat.hands.length})</span>
-            </div>
-          );
-        })}
+        {leReste.map(renderCategory)}
       </div>
 
       <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>

@@ -24,14 +24,17 @@ pub enum HandCategory {
     OnePair, // Keep it for fallback or generic
     HighCard,
     
-    Oesd,
+    Oesd1Card,
+    Oesd2Card,
     FlushDraw,
-    Gutshot,
+    Gutshot1Card,
+    Gutshot2Card,
     ComboDraw,
     OesdAndFd,
     GutshotAndFd,
     BackdoorFlushDraw,
     BackdoorStraightDraw,
+    Overcard,
     Nothing,
 }
 
@@ -185,42 +188,53 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     }
     let max_suit_count = *suit_counts.values().max().unwrap_or(&0);
     
-    // Straight outs
-    let mut unique_vals = [false; 14];
-    for c in &cards {
-        let v = c.value as u8;
-        unique_vals[(v + 1) as usize] = true;
-        if v == 12 { unique_vals[0] = true; }
-    }
-    
-    let mut is_straight = false;
-    for i in 0..10 {
-        if unique_vals[i] && unique_vals[i+1] && unique_vals[i+2] && unique_vals[i+3] && unique_vals[i+4] {
-            is_straight = true;
-            break;
+    // Straight outs helper
+    let check_outs = |cards_subset: &[Card]| -> (bool, u8) {
+        let mut unique_vals = [false; 14];
+        for c in cards_subset {
+            let v = c.value as u8;
+            unique_vals[(v + 1) as usize] = true;
+            if v == 12 { unique_vals[0] = true; }
         }
-    }
-    
-    let mut straight_outs = 0;
-    if !is_straight {
-        for out_val in 0..13 {
-            let mut temp_vals = unique_vals.clone();
-            temp_vals[out_val + 1] = true;
-            if out_val == 12 { temp_vals[0] = true; }
-            
-            let mut makes_straight = false;
-            for i in 0..10 {
-                if temp_vals[i] && temp_vals[i+1] && temp_vals[i+2] && temp_vals[i+3] && temp_vals[i+4] {
-                    makes_straight = true;
-                    break;
-                }
+        
+        let mut is_str = false;
+        for i in 0..10 {
+            if unique_vals[i] && unique_vals[i+1] && unique_vals[i+2] && unique_vals[i+3] && unique_vals[i+4] {
+                is_str = true;
+                break;
             }
-            if makes_straight { straight_outs += 1; }
         }
-    }
+        
+        let mut outs = 0;
+        if !is_str {
+            for out_val in 0..13 {
+                let mut temp_vals = unique_vals.clone();
+                temp_vals[out_val + 1] = true;
+                if out_val == 12 { temp_vals[0] = true; }
+                
+                let mut makes_straight = false;
+                for i in 0..10 {
+                    if temp_vals[i] && temp_vals[i+1] && temp_vals[i+2] && temp_vals[i+3] && temp_vals[i+4] {
+                        makes_straight = true;
+                        break;
+                    }
+                }
+                if makes_straight { outs += 1; }
+            }
+        }
+        (is_str, outs)
+    };
+
+    let (is_straight, straight_outs) = check_outs(&cards);
     
     let mut is_bdsd = false;
     if straight_outs == 0 && !is_straight {
+        let mut unique_vals = [false; 14];
+        for c in &cards {
+            let v = c.value as u8;
+            unique_vals[(v + 1) as usize] = true;
+            if v == 12 { unique_vals[0] = true; }
+        }
         for i in 0..10 {
             let mut count = 0;
             for j in 0..5 {
@@ -241,9 +255,37 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     let gutshot = straight_outs == 1 && !is_straight;
     let bdsd = is_bdsd && straight_outs == 0 && board.len() == 3 && !is_straight;
     
+    let board_max = board.iter().map(|c| c.value as u8).max().unwrap_or(0);
+    let overcard = hole_val1 > board_max || hole_val2 > board_max;
+
+    let mut oesd1 = false;
+    let mut gutshot1 = false;
+
+    if oesd || gutshot {
+        let mut cards_h1 = board.to_vec(); cards_h1.push(hole_cards.0);
+        let mut cards_h2 = board.to_vec(); cards_h2.push(hole_cards.1);
+        
+        let (str1, outs1) = check_outs(&cards_h1);
+        let (str2, outs2) = check_outs(&cards_h2);
+        
+        if outs1 >= 2 && !str1 || outs2 >= 2 && !str2 {
+            oesd1 = true;
+        }
+        if outs1 == 1 && !str1 || outs2 == 1 && !str2 {
+            gutshot1 = true;
+        }
+    }
+
     if fd { categories.push(HandCategory::FlushDraw); }
-    if oesd { categories.push(HandCategory::Oesd); }
-    if gutshot { categories.push(HandCategory::Gutshot); }
+    if oesd {
+        if oesd1 { categories.push(HandCategory::Oesd1Card); }
+        else { categories.push(HandCategory::Oesd2Card); }
+    }
+    if gutshot {
+        if gutshot1 { categories.push(HandCategory::Gutshot1Card); }
+        else { categories.push(HandCategory::Gutshot2Card); }
+    }
+    if overcard { categories.push(HandCategory::Overcard); }
     
     if oesd && fd { categories.push(HandCategory::OesdAndFd); }
     if gutshot && fd { categories.push(HandCategory::GutshotAndFd); }
