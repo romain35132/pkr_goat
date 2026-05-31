@@ -1,0 +1,186 @@
+use rs_poker::core::{Card, Hand, Rankable, Rank};
+use crate::parser::HoleCards;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum HandCategory {
+    StraightFlush,
+    FourOfAKind,
+    FullHouse,
+    Flush,
+    Straight,
+    Set,
+    Trips,
+    TwoPairBothHoleCards,
+    TwoPairOneHoleCard,
+    OnePair,
+    HighCard,
+    
+    Oesd,
+    FlushDraw,
+    Gutshot,
+    ComboDraw,
+    OesdAndFd,
+    GutshotAndFd,
+    BackdoorFlushDraw,
+    BackdoorStraightDraw,
+    Nothing,
+}
+
+pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCategory> {
+    let mut cards = board.to_vec();
+    cards.push(hole_cards.0);
+    cards.push(hole_cards.1);
+    
+    let hand = Hand::new_with_cards(cards.clone());
+    let rank = hand.rank();
+    
+    let hole_val1 = hole_cards.0.value as u8;
+    let hole_val2 = hole_cards.1.value as u8;
+    
+    let made_hand = match rank {
+        Rank::StraightFlush(_) => HandCategory::StraightFlush,
+        Rank::FourOfAKind(_) => HandCategory::FourOfAKind,
+        Rank::FullHouse(_) => HandCategory::FullHouse,
+        Rank::Flush(_) => HandCategory::Flush,
+        Rank::Straight(_) => HandCategory::Straight,
+        Rank::ThreeOfAKind(val) => {
+            let val = val as u8;
+            if hole_val1 == hole_val2 && hole_val1 == val {
+                HandCategory::Set
+            } else if hole_val1 == val || hole_val2 == val {
+                HandCategory::Trips
+            } else {
+                HandCategory::HighCard
+            }
+        },
+        Rank::TwoPair(_) => {
+            let mut val_counts = HashMap::new();
+            for c in &cards {
+                *val_counts.entry(c.value as u8).or_insert(0) += 1;
+            }
+            let mut pairs = Vec::new();
+            for (&v, &count) in &val_counts {
+                if count >= 2 {
+                    pairs.push(v);
+                }
+            }
+            pairs.sort_unstable_by(|a, b| b.cmp(a));
+            if pairs.len() >= 2 {
+                let v1 = pairs[0];
+                let v2 = pairs[1];
+                let h1_in = hole_val1 == v1 || hole_val1 == v2;
+                let h2_in = hole_val2 == v1 || hole_val2 == v2;
+                
+                if h1_in && h2_in {
+                    HandCategory::TwoPairBothHoleCards
+                } else if h1_in || h2_in {
+                    HandCategory::TwoPairOneHoleCard
+                } else {
+                    HandCategory::HighCard
+                }
+            } else {
+                HandCategory::HighCard
+            }
+        },
+        Rank::OnePair(val) => {
+            let val = val as u8;
+            if hole_val1 == val || hole_val2 == val {
+                HandCategory::OnePair
+            } else {
+                HandCategory::HighCard
+            }
+        },
+        Rank::HighCard(_) => HandCategory::HighCard,
+    };
+
+    let mut categories = vec![];
+    if made_hand != HandCategory::HighCard {
+        categories.push(made_hand.clone());
+    }
+    
+    // Suit count
+    let mut suit_counts = HashMap::new();
+    for c in &cards {
+        *suit_counts.entry(c.suit).or_insert(0) += 1;
+    }
+    let max_suit_count = *suit_counts.values().max().unwrap_or(&0);
+    
+    // Straight outs
+    let mut unique_vals = [false; 14];
+    for c in &cards {
+        let v = c.value as u8;
+        unique_vals[(v + 1) as usize] = true;
+        if v == 12 { unique_vals[0] = true; }
+    }
+    
+    let mut is_straight = false;
+    for i in 0..10 {
+        if unique_vals[i] && unique_vals[i+1] && unique_vals[i+2] && unique_vals[i+3] && unique_vals[i+4] {
+            is_straight = true;
+            break;
+        }
+    }
+    
+    let mut straight_outs = 0;
+    if !is_straight {
+        for out_val in 0..13 {
+            let mut temp_vals = unique_vals.clone();
+            temp_vals[out_val + 1] = true;
+            if out_val == 12 { temp_vals[0] = true; }
+            
+            let mut makes_straight = false;
+            for i in 0..10 {
+                if temp_vals[i] && temp_vals[i+1] && temp_vals[i+2] && temp_vals[i+3] && temp_vals[i+4] {
+                    makes_straight = true;
+                    break;
+                }
+            }
+            if makes_straight { straight_outs += 1; }
+        }
+    }
+    
+    let mut is_bdsd = false;
+    if straight_outs == 0 && !is_straight {
+        for i in 0..10 {
+            let mut count = 0;
+            for j in 0..5 {
+                if unique_vals[i+j] { count += 1; }
+            }
+            if count >= 3 {
+                is_bdsd = true;
+                break;
+            }
+        }
+    }
+    
+    let is_flush = max_suit_count >= 5;
+    
+    let fd = max_suit_count == 4 && !is_flush;
+    let bdfd = max_suit_count == 3 && board.len() == 3 && !is_flush;
+    let oesd = straight_outs >= 2 && !is_straight;
+    let gutshot = straight_outs == 1 && !is_straight;
+    let bdsd = is_bdsd && straight_outs == 0 && board.len() == 3 && !is_straight;
+    
+    if fd { categories.push(HandCategory::FlushDraw); }
+    if oesd { categories.push(HandCategory::Oesd); }
+    if gutshot { categories.push(HandCategory::Gutshot); }
+    
+    if oesd && fd { categories.push(HandCategory::OesdAndFd); }
+    if gutshot && fd { categories.push(HandCategory::GutshotAndFd); }
+    
+    let has_pair = matches!(made_hand, HandCategory::OnePair | HandCategory::TwoPairBothHoleCards | HandCategory::TwoPairOneHoleCard);
+    if has_pair && (fd || oesd || gutshot) {
+        categories.push(HandCategory::ComboDraw);
+    }
+    
+    if bdfd { categories.push(HandCategory::BackdoorFlushDraw); }
+    if bdsd { categories.push(HandCategory::BackdoorStraightDraw); }
+    
+    if !fd && !oesd && !gutshot && !bdfd && !bdsd && made_hand == HandCategory::HighCard {
+        categories.push(HandCategory::Nothing);
+    }
+    
+    categories
+}
