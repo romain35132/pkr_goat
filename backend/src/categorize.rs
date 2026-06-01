@@ -256,7 +256,7 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     let bdsd = is_bdsd && straight_outs == 0 && board.len() == 3 && !is_straight;
     
     let board_max = board.iter().map(|c| c.value as u8).max().unwrap_or(0);
-    let overcard = hole_val1 > board_max || hole_val2 > board_max;
+    let overcard = hole_val1 > board_max && hole_val2 > board_max && hole_val1 != hole_val2;
 
     let mut oesd1 = false;
     let mut gutshot1 = false;
@@ -309,7 +309,7 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     if bdfd { categories.push(HandCategory::BackdoorFlushDraw); }
     if bdsd { categories.push(HandCategory::BackdoorStraightDraw); }
     
-    if !fd && !oesd && !gutshot && !bdfd && !bdsd && made_hand == HandCategory::HighCard {
+    if !fd && !oesd && !gutshot && !bdfd && !bdsd && !overcard && made_hand == HandCategory::HighCard {
         categories.push(HandCategory::Nothing);
     }
     
