@@ -1,22 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { RangeSelector } from '../RangeSelector';
+
+const categoryNames: Record<string, string> = {
+  'StraightFlush': 'Quinte Flush',
+  'FourOfAKind': 'Carré',
+  'FullHouse': 'Full',
+  'Flush': 'Couleur',
+  'Straight': 'Quinte',
+  'Set': 'Brelan (Set)',
+  'Trips': 'Brelan (Trips)',
+  'TwoPairBothHoleCards': 'Double Paire',
+  'TwoPairOneHoleCard': 'Double Paire (1 carte board)',
+  'Overpair': 'Overpair',
+  'TopPair': 'Top Pair',
+  'SecondPair': 'Seconde Paire',
+  'ThirdPair': 'Troisième Paire',
+  'IntermediatePair': 'Paire Intermédiaire',
+  'Underpair': 'Underpair',
+  'SmallPair': 'Petite Paire',
+  'OnePair': 'Paire',
+  'HighCard': 'Hauteur',
+  'Overcard': 'Overcard',
+  'Oesd2Card': 'OESD (2card)',
+  'Oesd1Card': 'OESD (1card)',
+  'FlushDraw': 'Flushdraw',
+  'Gutshot2Card': 'Gutshot (2card)',
+  'Gutshot1Card': 'Gutshot (1card)',
+  'ComboDraw': 'Combo draw',
+  'OesdAndFd': 'OESD + FD',
+  'GutshotAndFd': 'Gutshot + FD',
+  'BackdoorFlushDraw': 'Backdoor flushdraw',
+  'BackdoorStraightDraw': 'Backdoor quinte',
+  'Nothing': 'Nothing'
+};
+
+const madeHandsSet = new Set([
+  'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
+  'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
+  'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
+  'OnePair'
+]);
 
 interface Profile {
   id: number;
   name: string;
 }
 
-interface Situation {
-  id: number;
-  street: string;
-  action_history: string;
-}
-
 interface Strategy {
   id: number;
   title?: string;
   profile_id: number;
-  situation_id: number;
   parent_strategy_id: number | null;
   street: string;
   strategy_data: any;
@@ -26,7 +60,6 @@ interface Strategy {
 const Strategies: React.FC = () => {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [situations, setSituations] = useState<Situation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -38,25 +71,22 @@ const Strategies: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [strategiesRes, profilesRes, situationsRes] = await Promise.all([
+      const [strategiesRes, profilesRes] = await Promise.all([
         fetch('http://localhost:3000/api/config/strategies'),
-        fetch('http://localhost:3000/api/config/profiles'),
-        fetch('http://localhost:3000/api/config/situations')
+        fetch('http://localhost:3000/api/config/profiles')
       ]);
 
-      if (!strategiesRes.ok || !profilesRes.ok || !situationsRes.ok) {
+      if (!strategiesRes.ok || !profilesRes.ok) {
         throw new Error('Failed to fetch data');
       }
 
-      const [strategiesData, profilesData, situationsData] = await Promise.all([
+      const [strategiesData, profilesData] = await Promise.all([
         strategiesRes.json(),
-        profilesRes.json(),
-        situationsRes.json()
+        profilesRes.json()
       ]);
 
       setStrategies(strategiesData);
       setProfiles(profilesData);
-      setSituations(situationsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -99,7 +129,6 @@ const Strategies: React.FC = () => {
         body: JSON.stringify({
           title: currentStrategy.title || null,
           profile_id: currentStrategy.profile_id ? parseInt(currentStrategy.profile_id.toString()) : (profiles[0]?.id || 0),
-          situation_id: currentStrategy.situation_id ? parseInt(currentStrategy.situation_id.toString()) : (situations[0]?.id || 0),
           parent_strategy_id: currentStrategy.parent_strategy_id ? parseInt(currentStrategy.parent_strategy_id.toString()) : null,
           street: currentStrategy.street || 'PREFLOP',
           strategy_data: strategyDataObj || {},
@@ -131,10 +160,6 @@ const Strategies: React.FC = () => {
   };
 
   const getProfileName = (id: number) => profiles.find(p => p.id === id)?.name || id;
-  const getSituationName = (id: number) => {
-    const sit = situations.find(s => s.id === id);
-    return sit ? `[${sit.street}] ${sit.action_history}` : id;
-  };
   const getStrategyTitle = (id: number) => {
     const strat = strategies.find(s => s.id === id);
     return strat ? (strat.title || `Stratégie #${strat.id}`) : id;
@@ -147,7 +172,7 @@ const Strategies: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Gestion des Stratégies</h2>
         <button
-          onClick={() => { setIsEditing(true); setCurrentStrategy({ street: 'PREFLOP', strategy_data: "{}" }); }}
+          onClick={() => { setIsEditing(true); setCurrentStrategy({ street: 'PREFLOP', strategy_data: {} }); }}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -189,20 +214,6 @@ const Strategies: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Situation</label>
-              <select
-                required
-                value={currentStrategy.situation_id || ''}
-                onChange={e => setCurrentStrategy({...currentStrategy, situation_id: parseInt(e.target.value)})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
-              >
-                <option value="">Sélectionner une situation</option>
-                {situations.map(s => (
-                  <option key={s.id} value={s.id}>[{s.street}] {s.action_history}</option>
-                ))}
-              </select>
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700">Street</label>
               <select
                 value={currentStrategy.street || 'PREFLOP'}
@@ -229,14 +240,74 @@ const Strategies: React.FC = () => {
               </select>
             </div>
             <div className="col-span-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Strategy Data (JSON)</label>
-              <textarea
-                required
-                value={typeof currentStrategy.strategy_data === 'string' ? currentStrategy.strategy_data : JSON.stringify(currentStrategy.strategy_data || {}, null, 2)}
-                onChange={e => setCurrentStrategy({...currentStrategy, strategy_data: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border font-mono text-sm"
-                rows={5}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Strategy Data</label>
+              {currentStrategy.street === 'PREFLOP' ? (
+                <div className="border rounded-md p-4 bg-white flex justify-center">
+                  <RangeSelector
+                    selectedHands={currentStrategy.strategy_data || {}}
+                    onChange={(action) => {
+                      setCurrentStrategy(prev => {
+                        const currentData = prev.strategy_data || {};
+                        const newData = typeof action === 'function' ? action(currentData) : action;
+                        return { ...prev, strategy_data: newData };
+                      });
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="border rounded-md p-4 bg-white space-y-6">
+                  <div>
+                    <h4 className="font-bold text-gray-800 mb-3 border-b pb-1">Mains faites (pair+)</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {Object.keys(categoryNames).filter(k => madeHandsSet.has(k)).map(cat => (
+                        <div key={cat} className="flex flex-col space-y-1">
+                          <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
+                          <select
+                            value={currentStrategy.strategy_data?.[cat] ?? 0}
+                            onChange={(e) => {
+                              const newData = { ...(currentStrategy.strategy_data || {}) };
+                              newData[cat] = parseInt(e.target.value);
+                              setCurrentStrategy({...currentStrategy, strategy_data: newData});
+                            }}
+                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm"
+                          >
+                            <option value={100}>100%</option>
+                            <option value={75}>75%</option>
+                            <option value={50}>50%</option>
+                            <option value={25}>25%</option>
+                            <option value={0}>0%</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-800 mb-3 border-b pb-1">Le reste</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {Object.keys(categoryNames).filter(k => !madeHandsSet.has(k)).map(cat => (
+                        <div key={cat} className="flex flex-col space-y-1">
+                          <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
+                          <select
+                            value={currentStrategy.strategy_data?.[cat] ?? 0}
+                            onChange={(e) => {
+                              const newData = { ...(currentStrategy.strategy_data || {}) };
+                              newData[cat] = parseInt(e.target.value);
+                              setCurrentStrategy({...currentStrategy, strategy_data: newData});
+                            }}
+                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm"
+                          >
+                            <option value={100}>100%</option>
+                            <option value={75}>75%</option>
+                            <option value={50}>50%</option>
+                            <option value={25}>25%</option>
+                            <option value={0}>0%</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-4">
@@ -262,7 +333,7 @@ const Strategies: React.FC = () => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titre / ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile / Situation</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Street</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data (Aperçu)</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -281,7 +352,6 @@ const Strategies: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-medium text-blue-600">{getProfileName(strategy.profile_id)}</div>
-                  <div className="text-gray-500 text-xs mt-1">{getSituationName(strategy.situation_id)}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
@@ -297,7 +367,14 @@ const Strategies: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <button
-                    onClick={() => { setIsEditing(true); setCurrentStrategy(strategy); }}
+                    onClick={() => { 
+                      let parsedData = strategy.strategy_data;
+                      if (typeof parsedData === 'string') {
+                        try { parsedData = JSON.parse(parsedData); } catch(e) { parsedData = {}; }
+                      }
+                      setIsEditing(true); 
+                      setCurrentStrategy({...strategy, strategy_data: parsedData}); 
+                    }}
                     className="text-indigo-600 hover:text-indigo-900 mr-4"
                   >
                     <Edit2 className="w-4 h-4" />

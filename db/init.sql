@@ -48,10 +48,8 @@ CREATE TABLE IF NOT EXISTS strategies (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255),
     profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
-    situation_id INTEGER REFERENCES situations(id) ON DELETE CASCADE,
     parent_strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     street VARCHAR(10) NOT NULL CHECK (street IN ('PREFLOP', 'FLOP', 'TURN', 'RIVER')),
     strategy_data JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(profile_id, situation_id)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

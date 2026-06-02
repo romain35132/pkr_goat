@@ -171,11 +171,10 @@ async fn create_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<(StatusCode, Json<Strategy>), StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "INSERT INTO strategies (title, profile_id, situation_id, parent_strategy_id, street, strategy_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *"
+        "INSERT INTO strategies (title, profile_id, parent_strategy_id, street, strategy_data) VALUES ($1, $2, $3, $4, $5) RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
-    .bind(payload.situation_id)
     .bind(payload.parent_strategy_id)
     .bind(&payload.street)
     .bind(&payload.strategy_data)
@@ -192,11 +191,10 @@ async fn update_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<Json<Strategy>, StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "UPDATE strategies SET title = $1, profile_id = $2, situation_id = $3, parent_strategy_id = $4, street = $5, strategy_data = $6 WHERE id = $7 RETURNING *"
+        "UPDATE strategies SET title = $1, profile_id = $2, parent_strategy_id = $3, street = $4, strategy_data = $5 WHERE id = $6 RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
-    .bind(payload.situation_id)
     .bind(payload.parent_strategy_id)
     .bind(&payload.street)
     .bind(&payload.strategy_data)

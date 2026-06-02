@@ -48,7 +48,6 @@ pub struct Strategy {
     pub id: i32,
     pub title: Option<String>,
     pub profile_id: i32,
-    pub situation_id: i32,
     pub parent_strategy_id: Option<i32>,
     pub street: String,
     pub strategy_data: Value,
@@ -59,7 +58,6 @@ pub struct Strategy {
 pub struct CreateStrategy {
     pub title: Option<String>,
     pub profile_id: i32,
-    pub situation_id: i32,
     pub parent_strategy_id: Option<i32>,
     pub street: String,
     pub strategy_data: Value,
