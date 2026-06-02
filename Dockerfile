@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build the Rust backend
-FROM rust:1.85-slim AS backend-builder
+FROM rust:slim-bookworm AS backend-builder
 WORKDIR /app/backend
 
 # Install build dependencies (pkg-config and libssl-dev are often needed)

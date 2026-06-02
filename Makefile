@@ -5,16 +5,15 @@ PORT = 3000
 .PHONY: start stop build logs
 
 build:
-	docker build -t $(IMAGE_NAME) .
+	docker-compose build
 
-start: build stop
-	docker run -d --name $(CONTAINER_NAME) -p $(PORT):3000 $(IMAGE_NAME)
+start: stop
+	docker-compose up -d
 	@echo "L'application a démarré sur http://localhost:$(PORT)"
 
 stop:
-	docker stop $(CONTAINER_NAME) 2>/dev/null || true
-	docker rm $(CONTAINER_NAME) 2>/dev/null || true
+	docker-compose down
 	@echo "L'application a été arrêtée."
 
 logs:
-	docker logs -f $(CONTAINER_NAME)
+	docker-compose logs -f

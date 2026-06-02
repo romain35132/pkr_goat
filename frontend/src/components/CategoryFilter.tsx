@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CategoryResult, CategorizedHand, CategoryDetailModal, getHandGroup } from './CategoryDetailModal';
-import { RangeSelector } from './RangeSelector';
 
 interface CategoryFilterProps {
   baseRange: Record<string, number>;
   board: string[];
   onChange: (newRange: Record<string, number>) => void;
+  onRangeGroupsChange?: (groups: Record<string, number>, allowed: string[]) => void;
   deadCards?: string[];
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, deadCards = [] }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, deadCards = [] }) => {
   const [categories, setCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -152,6 +152,12 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     return Array.from(groups);
   }, [categories]);
 
+  useEffect(() => {
+    if (onRangeGroupsChange) {
+      onRangeGroupsChange(aggregatedGroupWeights, allowedHands);
+    }
+  }, [aggregatedGroupWeights, allowedHands, onRangeGroupsChange]);
+
   if (loading) return <div>Chargement des catégories...</div>;
   if (error) return <div style={{ color: 'red' }}>{error}</div>;
   if (categories.length === 0) return <div>Aucune main classifiée.</div>;
@@ -251,16 +257,6 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
         {leReste.map(renderCategory)}
-      </div>
-
-      <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
-        <RangeSelector 
-          selectedHands={aggregatedGroupWeights}
-          onChange={() => {}} 
-          allowedHands={allowedHands}
-          readOnly={true}
-          deadCards={deadCards}
-        />
       </div>
 
       {detailModal && (
