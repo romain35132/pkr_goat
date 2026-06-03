@@ -56,7 +56,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
           'OnePair', 
           'HighCard', 'Overcard',
           'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'Oesd2Card', 'Oesd1Card', 'Gutshot2Card', 'Gutshot1Card',
-          'BackdoorFlushDraw', 'BackdoorStraightDraw', 'Nothing'
+          'BackdoorFlushDraw1Card', 'BackdoorFlushDraw2Card', 'BackdoorStraightDraw', 'Nothing'
         ];
         
         data.categories.sort((a, b) => {
@@ -99,6 +99,12 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
 
     setCategories(baseCategories.map(cat => {
       let strategyWeight = parsedStrategy[cat.category];
+      
+      // Fallback pour les anciennes stratégies enregistrées sans les nouvelles catégories BDFD séparées
+      if (strategyWeight === undefined && (cat.category === 'BackdoorFlushDraw1Card' || cat.category === 'BackdoorFlushDraw2Card')) {
+        strategyWeight = parsedStrategy['BackdoorFlushDraw'];
+      }
+
       if (typeof strategyWeight === 'string') {
          strategyWeight = parseInt(strategyWeight, 10);
       }
@@ -227,7 +233,8 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'ComboDraw': 'Combo draw',
     'OesdAndFd': 'OESD + FD',
     'GutshotAndFd': 'Gutshot + FD',
-    'BackdoorFlushDraw': 'Backdoor flushdraw',
+    'BackdoorFlushDraw1Card': '1 card backdoor flushdraw',
+    'BackdoorFlushDraw2Card': '2 card backdoor flushdraw',
     'BackdoorStraightDraw': 'Backdoor quinte',
     'Nothing': 'Nothing'
   };

@@ -73,6 +73,11 @@ const PokerEquityCalculator: React.FC = () => {
   const [isPlayerHandOpen, setIsPlayerHandOpen] = useState(true);
   const [isBoardOpen, setIsBoardOpen] = useState(true);
 
+  const [potSize, setPotSize] = useState<number>(0);
+  const [actionType, setActionType] = useState<'Check/Fold' | 'Call' | 'Bet/Raise'>('Call');
+  const [actionAmount, setActionAmount] = useState<number>(0);
+  const [foldEquity, setFoldEquity] = useState<number>(0);
+
   const [result, setResult] = useState<EquityResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -135,6 +140,25 @@ const PokerEquityCalculator: React.FC = () => {
     return {};
   };
 
+  const baseCombos = useMemo(() => {
+    let total = 0;
+    const deadCards = [...playerCards, ...boardCards];
+    const baseRange = getBaseRangeForCurrentStreet();
+    for (const [hand, weight] of Object.entries(baseRange)) {
+      if (weight > 0) {
+        total += getComboCount(hand, deadCards) * (weight / 100);
+      }
+    }
+    return total;
+  }, [ranges, currentStreet, playerCards, boardCards]);
+
+  useEffect(() => {
+    if (currentStreet !== 'Preflop' && baseCombos > 0) {
+      const fe = ((baseCombos - opponentCombos) / baseCombos) * 100;
+      setFoldEquity(Number(Math.max(0, Math.min(100, fe)).toFixed(1)));
+    }
+  }, [baseCombos, opponentCombos, currentStreet]);
+
   const handleRangeChange = (newRangeOrUpdater: Record<string, number> | React.SetStateAction<Record<string, number>>) => {
     setRanges(prev => {
       const prevStreetRange = prev[currentStreet];
@@ -170,6 +194,64 @@ const PokerEquityCalculator: React.FC = () => {
     .join(', ');
   const board = boardCards.join(' ');
 
+  useEffect(() => {
+    let isActive = true;
+
+    const calculateEquity = async () => {
+      if (playerCards.length !== 2) {
+        return;
+      }
+      if (Object.keys(currentRange).length === 0) {
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        const response = await fetch('/api/v1/equity/monte-carlo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            player_hand: playerHand,
+            opponent_range: opponentRange,
+            board: board,
+            iterations: 100000,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!isActive) return;
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Une erreur est survenue');
+        }
+
+        setResult(data);
+      } catch (err: any) {
+        if (!isActive) return;
+        setError(err.message || 'Erreur de connexion au serveur');
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    if (playerCards.length === 2 && Object.keys(currentRange).length > 0) {
+      calculateEquity();
+    } else {
+      setResult(null);
+    }
+
+    return () => {
+      isActive = false;
+    };
+  }, [playerHand, opponentRange, board, playerCards.length, currentRange]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (playerCards.length !== 2) {
@@ -180,10 +262,9 @@ const PokerEquityCalculator: React.FC = () => {
       setError('Veuillez sélectionner au moins une main pour le range adverse.');
       return;
     }
-
+    
     setLoading(true);
     setError('');
-    setResult(null);
 
     try {
       const response = await fetch('/api/v1/equity/monte-carlo', {
@@ -239,16 +320,39 @@ const PokerEquityCalculator: React.FC = () => {
                 setSelectedStrategyId(id);
                 if (id) {
                   const strategy = preflopStrategies.find(s => s.id.toString() === id);
-                  if (strategy && strategy.strategy_data) {
-                    // Si la strategy est stockée en string on la parse, sinon direct
-                    let dataToImport = strategy.strategy_data;
-                    if (typeof dataToImport === 'string') {
-                      try {
-                        dataToImport = JSON.parse(dataToImport);
-                      } catch (err) {}
+                  if (strategy) {
+                    if (strategy.strategy_data) {
+                      // Si la strategy est stockée en string on la parse, sinon direct
+                      let dataToImport = strategy.strategy_data;
+                      if (typeof dataToImport === 'string') {
+                        try {
+                          dataToImport = JSON.parse(dataToImport);
+                        } catch (err) {}
+                      }
+                      if (typeof dataToImport === 'object') {
+                        handleRangeChange(dataToImport);
+                      }
                     }
-                    if (typeof dataToImport === 'object') {
-                      handleRangeChange(dataToImport);
+                    if (strategy.pot_size_bb !== null && strategy.pot_size_bb !== undefined) {
+                      setPotSize(strategy.pot_size_bb);
+                    }
+                    if (strategy.hero_action) {
+                      if (strategy.hero_action === 'FOLD' || strategy.hero_action === 'CHECK') {
+                        setActionType('Check/Fold');
+                      } else if (strategy.hero_action === 'CALL') {
+                        setActionType('Call');
+                      } else if (strategy.hero_action === 'BET' || strategy.hero_action === 'RAISE') {
+                        setActionType('Bet/Raise');
+                      }
+                    }
+                    if (strategy.action_size) {
+                      let parsedAmount = parseFloat(strategy.action_size);
+                      if (!isNaN(parsedAmount)) {
+                        if (strategy.action_size.includes('%') && strategy.pot_size_bb) {
+                          parsedAmount = (parsedAmount / 100) * strategy.pot_size_bb;
+                        }
+                        setActionAmount(Number(parsedAmount.toFixed(1)));
+                      }
                     }
                   }
                 }
@@ -328,7 +432,36 @@ const PokerEquityCalculator: React.FC = () => {
                 </label>
                 <select
                   value={selectedFlopStrategyId}
-                  onChange={(e) => setSelectedFlopStrategyId(e.target.value)}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedFlopStrategyId(id);
+                    if (id) {
+                      const strategy = flopStrategies.find(s => s.id.toString() === id);
+                      if (strategy) {
+                        if (strategy.pot_size_bb !== null && strategy.pot_size_bb !== undefined) {
+                          setPotSize(strategy.pot_size_bb);
+                        }
+                        if (strategy.hero_action) {
+                          if (strategy.hero_action === 'FOLD' || strategy.hero_action === 'CHECK') {
+                            setActionType('Check/Fold');
+                          } else if (strategy.hero_action === 'CALL') {
+                            setActionType('Call');
+                          } else if (strategy.hero_action === 'BET' || strategy.hero_action === 'RAISE') {
+                            setActionType('Bet/Raise');
+                          }
+                        }
+                        if (strategy.action_size) {
+                          let parsedAmount = parseFloat(strategy.action_size);
+                          if (!isNaN(parsedAmount)) {
+                            if (strategy.action_size.includes('%') && strategy.pot_size_bb) {
+                              parsedAmount = (parsedAmount / 100) * strategy.pot_size_bb;
+                            }
+                            setActionAmount(Number(parsedAmount.toFixed(1)));
+                          }
+                        }
+                      }
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '8px',
@@ -420,6 +553,73 @@ const PokerEquityCalculator: React.FC = () => {
             </div>
           </div>
 
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Paramètres d'EV</h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>Taille du Pot</label>
+                <input 
+                  type="number" 
+                  value={potSize || ''} 
+                  onChange={(e) => setPotSize(Number(e.target.value))}
+                  placeholder="Ex: 100"
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>Action Envisagée</label>
+                <select 
+                  value={actionType} 
+                  onChange={(e) => setActionType(e.target.value as any)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px', backgroundColor: 'white' }}
+                >
+                  <option value="Check/Fold">Check / Fold</option>
+                  <option value="Call">Call</option>
+                  <option value="Bet/Raise">Bet / Raise</option>
+                </select>
+              </div>
+
+              {actionType !== 'Check/Fold' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>
+                    Montant ({actionType === 'Call' ? 'à payer' : 'de la mise'})
+                  </label>
+                  <input 
+                    type="number" 
+                    value={actionAmount || ''} 
+                    onChange={(e) => setActionAmount(Number(e.target.value))}
+                    placeholder="Ex: 50"
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
+                  />
+                </div>
+              )}
+
+              {actionType === 'Bet/Raise' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold', margin: 0 }}>
+                      Fold Equity (%)
+                    </label>
+                    {currentStreet !== 'Preflop' && baseCombos > 0 && (
+                      <span style={{ fontSize: '11px', color: '#3498db' }}>
+                        Auto-calculé via le filtre
+                      </span>
+                    )}
+                  </div>
+                  <input 
+                    type="number" 
+                    value={foldEquity === 0 && baseCombos === 0 ? '' : foldEquity} 
+                    onChange={(e) => setFoldEquity(Number(e.target.value))}
+                    placeholder="Ex: 30"
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={loading}
@@ -451,6 +651,33 @@ const PokerEquityCalculator: React.FC = () => {
                 Équité : {(result.equity * 100).toFixed(2)}%
               </h2>
               
+              {(() => {
+                const eq = result.equity;
+                let ev = 0;
+                
+                if (actionType === 'Check/Fold') {
+                  ev = 0;
+                } else if (actionType === 'Call') {
+                  ev = (eq * potSize) - ((1 - eq) * actionAmount);
+                } else if (actionType === 'Bet/Raise') {
+                  const fe = foldEquity / 100;
+                  ev = (fe * potSize) + ((1 - fe) * ((eq * (potSize + actionAmount)) - ((1 - eq) * actionAmount)));
+                }
+
+                return (
+                  <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: ev > 0 ? '#e8f8f5' : (ev < 0 ? '#fdedec' : '#f8f9fa'), borderRadius: '8px', border: `1px solid ${ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : '#bdc3c7')}` }}>
+                    <h3 style={{ margin: '0 0 10px 0', color: ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : '#2c3e50'), textAlign: 'center', fontSize: '18px' }}>
+                      Expected Value (EV) : {ev > 0 ? '+' : ''}{ev.toFixed(2)}
+                    </h3>
+                    <div style={{ fontSize: '13px', color: '#7f8c8d', textAlign: 'center' }}>
+                      {actionType === 'Check/Fold' && "L'EV d'un fold est toujours de 0."}
+                      {actionType === 'Call' && `Basé sur un pot de ${potSize} et un call de ${actionAmount}.`}
+                      {actionType === 'Bet/Raise' && `Basé sur un pot de ${potSize}, une mise de ${actionAmount} et ${foldEquity}% de fold equity.`}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div style={{ height: '20px', backgroundColor: '#ecf0f1', borderRadius: '10px', overflow: 'hidden', marginBottom: '20px' }}>
                 <div style={{ width: `${result.equity * 100}%`, height: '100%', backgroundColor: '#27ae60', transition: 'width 0.5s ease-in-out' }}></div>
               </div>

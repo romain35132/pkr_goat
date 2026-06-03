@@ -32,7 +32,8 @@ pub enum HandCategory {
     ComboDraw,
     OesdAndFd,
     GutshotAndFd,
-    BackdoorFlushDraw,
+    BackdoorFlushDraw1Card,
+    BackdoorFlushDraw2Card,
     BackdoorStraightDraw,
     Overcard,
     Nothing,
@@ -250,7 +251,22 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     let is_flush = max_suit_count >= 5;
     
     let fd = max_suit_count == 4 && !is_flush;
-    let bdfd = max_suit_count == 3 && board.len() == 3 && !is_flush;
+    let mut bdfd1 = false;
+    let mut bdfd2 = false;
+
+    if max_suit_count == 3 && board.len() == 3 && !is_flush {
+        let max_suit = suit_counts.iter().max_by_key(|&(_, count)| count).unwrap().0;
+        let mut hole_suit_count = 0;
+        if hole_cards.0.suit == *max_suit { hole_suit_count += 1; }
+        if hole_cards.1.suit == *max_suit { hole_suit_count += 1; }
+        
+        if hole_suit_count == 1 {
+            bdfd1 = true;
+        } else if hole_suit_count == 2 {
+            bdfd2 = true;
+        }
+    }
+    
     let oesd = straight_outs >= 2 && !is_straight;
     let gutshot = straight_outs == 1 && !is_straight;
     let bdsd = is_bdsd && straight_outs == 0 && board.len() == 3 && !is_straight;
@@ -306,10 +322,11 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
         categories.push(HandCategory::ComboDraw);
     }
     
-    if bdfd { categories.push(HandCategory::BackdoorFlushDraw); }
+    if bdfd1 { categories.push(HandCategory::BackdoorFlushDraw1Card); }
+    if bdfd2 { categories.push(HandCategory::BackdoorFlushDraw2Card); }
     if bdsd { categories.push(HandCategory::BackdoorStraightDraw); }
     
-    if !fd && !oesd && !gutshot && !bdfd && !bdsd && !overcard && made_hand == HandCategory::HighCard {
+    if !fd && !oesd && !gutshot && !bdfd1 && !bdfd2 && !bdsd && !overcard && made_hand == HandCategory::HighCard {
         categories.push(HandCategory::Nothing);
     }
     

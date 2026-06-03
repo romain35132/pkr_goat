@@ -30,7 +30,8 @@ const categoryNames: Record<string, string> = {
   'ComboDraw': 'Combo draw',
   'OesdAndFd': 'OESD + FD',
   'GutshotAndFd': 'Gutshot + FD',
-  'BackdoorFlushDraw': 'Backdoor flushdraw',
+  'BackdoorFlushDraw1Card': '1 card backdoor flushdraw',
+  'BackdoorFlushDraw2Card': '2 card backdoor flushdraw',
   'BackdoorStraightDraw': 'Backdoor quinte',
   'Nothing': 'Nothing'
 };
@@ -67,6 +68,16 @@ const Strategies: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [currentStrategy, setCurrentStrategy] = useState<Partial<Strategy>>({});
+
+  const getStrategyValue = (cat: string, data: any) => {
+    if (!data) return 0;
+    if (data[cat] !== undefined) return data[cat];
+    // Fallback for old BackdoorFlushDraw keys
+    if ((cat === 'BackdoorFlushDraw1Card' || cat === 'BackdoorFlushDraw2Card') && data['BackdoorFlushDraw'] !== undefined) {
+      return data['BackdoorFlushDraw'];
+    }
+    return 0;
+  };
 
   useEffect(() => {
     fetchData();
@@ -306,7 +317,7 @@ const Strategies: React.FC = () => {
                         <div key={cat} className="flex flex-col space-y-1">
                           <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
                           <select
-                            value={currentStrategy.strategy_data?.[cat] ?? 0}
+                            value={getStrategyValue(cat, currentStrategy.strategy_data)}
                             onChange={(e) => {
                               const newData = { ...(currentStrategy.strategy_data || {}) };
                               newData[cat] = parseInt(e.target.value);
@@ -331,7 +342,7 @@ const Strategies: React.FC = () => {
                         <div key={cat} className="flex flex-col space-y-1">
                           <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
                           <select
-                            value={currentStrategy.strategy_data?.[cat] ?? 0}
+                            value={getStrategyValue(cat, currentStrategy.strategy_data)}
                             onChange={(e) => {
                               const newData = { ...(currentStrategy.strategy_data || {}) };
                               newData[cat] = parseInt(e.target.value);
