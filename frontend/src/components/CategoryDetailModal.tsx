@@ -14,6 +14,7 @@ export interface CategoryResult {
 interface CategoryDetailModalProps {
   category: string;
   hands: CategorizedHand[];
+  effectiveRange?: Record<string, number>;
   onClose: () => void;
   onUpdate: (updatedHands: CategorizedHand[]) => void;
 }
@@ -33,7 +34,7 @@ export const getHandGroup = (combo: string) => {
   return `${high}${low}${s1 === s2 ? 's' : 'o'}`;
 };
 
-export const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({ category, hands, onClose, onUpdate }) => {
+export const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({ category, hands, effectiveRange, onClose, onUpdate }) => {
   // Determine allowed hand groups and their initial weights based on combos
   const initialGroupWeights = useMemo(() => {
     const groups: Record<string, number[]> = {};
@@ -45,13 +46,36 @@ export const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({ catego
     
     const result: Record<string, number> = {};
     for (const [g, weights] of Object.entries(groups)) {
-      result[g] = Math.max(...weights); // Use max weight as representative
+      const maxWeight = Math.max(...weights);
+      if (maxWeight > 0) {
+        result[g] = maxWeight;
+      }
     }
     return result;
   }, [hands]);
 
+  const effectiveGroupWeights = useMemo(() => {
+    if (!effectiveRange) return {};
+    const groups: Record<string, number[]> = {};
+    hands.forEach(h => {
+      const g = getHandGroup(h.hand);
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(effectiveRange[h.hand] || 0);
+    });
+    
+    const result: Record<string, number> = {};
+    for (const [g, weights] of Object.entries(groups)) {
+      result[g] = Math.max(...weights);
+    }
+    return result;
+  }, [hands, effectiveRange]);
+
   const [localHands, setLocalHands] = useState<Record<string, number>>(initialGroupWeights);
-  const allowedHands = useMemo(() => Object.keys(initialGroupWeights), [initialGroupWeights]);
+  const allowedHands = useMemo(() => {
+    const groups = new Set<string>();
+    hands.forEach(h => groups.add(getHandGroup(h.hand)));
+    return Array.from(groups);
+  }, [hands]);
 
   const handleSave = () => {
     // Map back to combos
@@ -75,6 +99,7 @@ export const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({ catego
           selectedHands={localHands}
           onChange={setLocalHands}
           allowedHands={allowedHands}
+          effectiveHands={effectiveGroupWeights}
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', width: '100%' }}>
           <button onClick={onClose} style={{ padding: '8px 15px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: '4px', backgroundColor: '#f8f9fa' }}>Annuler</button>

@@ -122,21 +122,25 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     }));
   }, [strategyData, baseCategories]);
 
-  // Recompute the effective range whenever active categories or hands change
-  useEffect(() => {
-    if (categories.length === 0) return;
+  const effectiveRange = useMemo(() => {
     const newRange: Record<string, number> = {};
     categories.forEach(cat => {
       if (activeCategories[cat.category]) {
         cat.hands.forEach(h => {
           if (h.weight > 0) {
-            newRange[h.hand] = h.weight;
+            newRange[h.hand] = Math.max(newRange[h.hand] || 0, h.weight);
           }
         });
       }
     });
-    onChange(newRange);
+    return newRange;
   }, [categories, activeCategories]);
+
+  // Recompute the effective range whenever active categories or hands change
+  useEffect(() => {
+    if (categories.length === 0) return;
+    onChange(effectiveRange);
+  }, [effectiveRange]);
 
   const handleToggle = (category: string) => {
     setActiveCategories(prev => ({ ...prev, [category]: !prev[category] }));
@@ -153,15 +157,20 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     const updatedWeights = new Map<string, number>();
     updatedHands.forEach(h => updatedWeights.set(h.hand, h.weight));
 
-    setCategories(prev => prev.map(cat => ({
-      ...cat,
-      hands: cat.hands.map(h => {
-        if (updatedWeights.has(h.hand)) {
-          return { ...h, weight: updatedWeights.get(h.hand)! };
-        }
-        return h;
-      })
-    })));
+    setCategories(prev => prev.map(cat => {
+      if (cat.category === detailModal.category) {
+        return {
+          ...cat,
+          hands: cat.hands.map(h => {
+            if (updatedWeights.has(h.hand)) {
+              return { ...h, weight: updatedWeights.get(h.hand)! };
+            }
+            return h;
+          })
+        };
+      }
+      return cat;
+    }));
   };
 
   const aggregatedGroupWeights = useMemo(() => {
@@ -251,7 +260,10 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
 
   const renderCategory = (cat: CategoryResult) => {
     const isActive = activeCategories[cat.category];
-    const comboCount = cat.hands.reduce((acc, h) => acc + h.weight / 100, 0);
+    const comboCount = cat.hands.reduce((acc, h) => {
+      const weight = Math.max(h.weight, effectiveRange[h.hand] || 0);
+      return acc + weight / 100;
+    }, 0);
     const displayCount = comboCount % 1 === 0 ? comboCount : comboCount.toFixed(1);
     
     return (
@@ -307,6 +319,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         <CategoryDetailModal
           category={categoryNames[detailModal.category] || detailModal.category}
           hands={detailModal.hands}
+          effectiveRange={effectiveRange}
           onClose={() => setDetailModal(null)}
           onUpdate={handleUpdateDetail}
         />

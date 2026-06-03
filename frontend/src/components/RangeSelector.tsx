@@ -6,6 +6,7 @@ interface RangeSelectorProps {
   allowedHands?: string[];
   readOnly?: boolean;
   deadCards?: string[];
+  effectiveHands?: Record<string, number>;
 }
 
 const VALUES = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -88,6 +89,7 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
   allowedHands,
   readOnly = false,
   deadCards = [],
+  effectiveHands,
 }) => {
   const [currentWeight, setCurrentWeight] = useState<number>(100);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -222,12 +224,20 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
             }
 
             const weight = selectedHands[hand];
-            const isSelected = weight !== undefined;
+            const isSelected = weight !== undefined && weight > 0;
             const isAllowed = allowedHands ? allowedHands.includes(hand) : true;
+            
+            const effectiveWeight = effectiveHands ? effectiveHands[hand] : undefined;
+            const isEffective = effectiveWeight !== undefined && effectiveWeight > 0;
 
             let cellBgColor = isSelected ? '#2d3436' : bgColor;
             let cellColor = isSelected ? 'white' : '#2d3436';
             let cellOpacity = isAllowed ? 1 : 0.2;
+
+            if (!isSelected && isEffective) {
+              cellBgColor = '#95a5a6'; // gray
+              cellColor = 'white';
+            }
 
             if (readOnly) {
               cellBgColor = isSelected ? bgColor : '#f8f9fa';
