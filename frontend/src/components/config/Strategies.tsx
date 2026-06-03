@@ -53,6 +53,9 @@ interface Strategy {
   profile_id: number;
   parent_strategy_id: number | null;
   street: string;
+  pot_size_bb?: number;
+  hero_action?: 'BET' | 'CALL' | 'CHECK';
+  action_size?: string;
   strategy_data: any;
   created_at: string;
 }
@@ -131,6 +134,9 @@ const Strategies: React.FC = () => {
           profile_id: currentStrategy.profile_id ? parseInt(currentStrategy.profile_id.toString()) : (profiles[0]?.id || 0),
           parent_strategy_id: currentStrategy.parent_strategy_id ? parseInt(currentStrategy.parent_strategy_id.toString()) : null,
           street: currentStrategy.street || 'PREFLOP',
+          pot_size_bb: currentStrategy.pot_size_bb ? parseFloat(currentStrategy.pot_size_bb.toString()) : null,
+          hero_action: currentStrategy.hero_action || null,
+          action_size: (currentStrategy.hero_action === 'BET' || currentStrategy.hero_action === 'CALL') ? (currentStrategy.action_size || null) : null,
           strategy_data: strategyDataObj || {},
         }),
       });
@@ -239,6 +245,43 @@ const Strategies: React.FC = () => {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Taille du Pot (bb)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={currentStrategy.pot_size_bb ?? ''}
+                onChange={e => setCurrentStrategy({...currentStrategy, pot_size_bb: e.target.value ? parseFloat(e.target.value) : undefined})}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                placeholder="Ex: 5.5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Action Hero</label>
+              <select
+                value={currentStrategy.hero_action || ''}
+                onChange={e => setCurrentStrategy({...currentStrategy, hero_action: e.target.value as any})}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+              >
+                <option value="">Sélectionner une action</option>
+                <option value="BET">Bet / Raise</option>
+                <option value="CALL">Call</option>
+                <option value="CHECK">Check</option>
+              </select>
+            </div>
+            {(currentStrategy.hero_action === 'BET' || currentStrategy.hero_action === 'CALL') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Taille de l'action</label>
+                <input
+                  type="text"
+                  value={currentStrategy.action_size || ''}
+                  onChange={e => setCurrentStrategy({...currentStrategy, action_size: e.target.value})}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                  placeholder="Ex: 33%, 3bb, All-in"
+                />
+              </div>
+            )}
             <div className="col-span-1 md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Strategy Data</label>
               {currentStrategy.street === 'PREFLOP' ? (
@@ -335,6 +378,7 @@ const Strategies: React.FC = () => {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titre / ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Street</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contexte</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data (Aperçu)</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
@@ -361,6 +405,17 @@ const Strategies: React.FC = () => {
                       'bg-red-100 text-red-800'}`}>
                     {strategy.street}
                   </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {strategy.pot_size_bb !== undefined && strategy.pot_size_bb !== null && (
+                    <div className="mb-1">Pot: <span className="font-medium">{strategy.pot_size_bb} bb</span></div>
+                  )}
+                  {strategy.hero_action && (
+                    <div>
+                      Action: <span className="font-medium">{strategy.hero_action}</span>
+                      {strategy.action_size && ` (${strategy.action_size})`}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500 truncate max-w-xs">
                   {JSON.stringify(strategy.strategy_data)}

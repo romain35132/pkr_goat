@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS strategies (
     profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
     parent_strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     street VARCHAR(10) NOT NULL CHECK (street IN ('PREFLOP', 'FLOP', 'TURN', 'RIVER')),
+    pot_size_bb DOUBLE PRECISION,
+    hero_action VARCHAR(10) CHECK (hero_action IN ('BET', 'CALL', 'CHECK')),
+    action_size VARCHAR(50),
     strategy_data JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

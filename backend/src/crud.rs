@@ -162,7 +162,10 @@ async fn get_strategies(State(state): State<Arc<AppState>>) -> Result<Json<Vec<S
     let strategies = sqlx::query_as::<_, Strategy>("SELECT * FROM strategies ORDER BY id")
         .fetch_all(&state.db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            eprintln!("Error fetching strategies: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(strategies))
 }
 
@@ -171,12 +174,15 @@ async fn create_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<(StatusCode, Json<Strategy>), StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "INSERT INTO strategies (title, profile_id, parent_strategy_id, street, strategy_data) VALUES ($1, $2, $3, $4, $5) RETURNING *"
+        "INSERT INTO strategies (title, profile_id, parent_strategy_id, street, pot_size_bb, hero_action, action_size, strategy_data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
     .bind(payload.parent_strategy_id)
     .bind(&payload.street)
+    .bind(payload.pot_size_bb)
+    .bind(&payload.hero_action)
+    .bind(&payload.action_size)
     .bind(&payload.strategy_data)
     .fetch_one(&state.db)
     .await
@@ -191,12 +197,15 @@ async fn update_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<Json<Strategy>, StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "UPDATE strategies SET title = $1, profile_id = $2, parent_strategy_id = $3, street = $4, strategy_data = $5 WHERE id = $6 RETURNING *"
+        "UPDATE strategies SET title = $1, profile_id = $2, parent_strategy_id = $3, street = $4, pot_size_bb = $5, hero_action = $6, action_size = $7, strategy_data = $8 WHERE id = $9 RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
     .bind(payload.parent_strategy_id)
     .bind(&payload.street)
+    .bind(payload.pot_size_bb)
+    .bind(&payload.hero_action)
+    .bind(&payload.action_size)
     .bind(&payload.strategy_data)
     .bind(id)
     .fetch_optional(&state.db)

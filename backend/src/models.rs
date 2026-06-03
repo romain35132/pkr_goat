@@ -50,6 +50,9 @@ pub struct Strategy {
     pub profile_id: i32,
     pub parent_strategy_id: Option<i32>,
     pub street: String,
+    pub pot_size_bb: Option<f64>,
+    pub hero_action: Option<String>,
+    pub action_size: Option<String>,
     pub strategy_data: Value,
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -60,5 +63,8 @@ pub struct CreateStrategy {
     pub profile_id: i32,
     pub parent_strategy_id: Option<i32>,
     pub street: String,
+    pub pot_size_bb: Option<f64>,
+    pub hero_action: Option<String>,
+    pub action_size: Option<String>,
     pub strategy_data: Value,
 }
