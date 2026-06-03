@@ -10,7 +10,7 @@ use crate::parser::{parse_card, parse_hand};
 use crate::range::expand_range;
 use crate::engine::calculate_equity;
 use crate::categorize::{categorize_hand, HandCategory};
-use rs_poker::core::Card;
+use rs_poker::core::{Card, Rankable};
 use std::collections::HashMap;
 
 #[derive(Deserialize)]
@@ -172,7 +172,7 @@ pub async fn categorize_handler(
         }
     }
 
-    let mut map: HashMap<HandCategory, Vec<CategorizedHand>> = HashMap::new();
+    let mut map: HashMap<HandCategory, Vec<(CategorizedHand, rs_poker::core::Rank)>> = HashMap::new();
 
     for (hole_cards, weight) in opponent_range {
         let c1 = hole_cards.0;
@@ -185,17 +185,26 @@ pub async fn categorize_handler(
         let categories = categorize_hand(&hole_cards, &board);
         let hand_str = format!("{}{}", hole_cards.0, hole_cards.1);
         
+        let mut eval_cards = board.clone();
+        eval_cards.push(c1);
+        eval_cards.push(c2);
+        let rank = rs_poker::core::Hand::new_with_cards(eval_cards).rank();
+        
         for category in categories {
-            map.entry(category).or_insert_with(Vec::new).push(CategorizedHand {
+            map.entry(category).or_insert_with(Vec::new).push((CategorizedHand {
                 hand: hand_str.clone(),
                 weight,
-            });
+            }, rank.clone()));
         }
     }
 
     let mut categories: Vec<CategoryResult> = map
         .into_iter()
-        .map(|(category, hands)| CategoryResult { category, hands })
+        .map(|(category, mut hands_with_rank)| {
+            hands_with_rank.sort_by(|a, b| b.1.cmp(&a.1));
+            let hands = hands_with_rank.into_iter().map(|(h, _)| h).collect();
+            CategoryResult { category, hands }
+        })
         .collect();
 
     // Optionally sort categories here or handle in frontend

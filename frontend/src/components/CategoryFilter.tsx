@@ -7,10 +7,12 @@ interface CategoryFilterProps {
   onChange: (newRange: Record<string, number>) => void;
   onRangeGroupsChange?: (groups: Record<string, number>, allowed: string[]) => void;
   deadCards?: string[];
+  strategyData?: Record<string, number> | string;
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, deadCards = [] }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, deadCards = [], strategyData }) => {
   const [categories, setCategories] = useState<CategoryResult[]>([]);
+  const [baseCategories, setBaseCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -64,6 +66,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         });
 
         setCategories(data.categories);
+        setBaseCategories(JSON.parse(JSON.stringify(data.categories)));
         
         // By default, all are active
         const initialActive: Record<string, boolean> = {};
@@ -78,6 +81,40 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
 
     fetchCategories();
   }, [baseRange, board.join(' '), deadCards.join(' ')]);
+
+  // Appliquer la strategyData quand elle change
+  useEffect(() => {
+    if (!strategyData || baseCategories.length === 0) return;
+    
+    let parsedStrategy: Record<string, number>;
+    if (typeof strategyData === 'string') {
+      try {
+        parsedStrategy = JSON.parse(strategyData);
+      } catch {
+        return;
+      }
+    } else {
+      parsedStrategy = strategyData;
+    }
+
+    setCategories(baseCategories.map(cat => {
+      let strategyWeight = parsedStrategy[cat.category];
+      if (typeof strategyWeight === 'string') {
+         strategyWeight = parseInt(strategyWeight, 10);
+      }
+      if (strategyWeight !== undefined && !isNaN(strategyWeight)) {
+        const targetCount = Math.round(cat.hands.length * (strategyWeight / 100));
+        return {
+          ...cat,
+          hands: cat.hands.map((h, idx) => ({ 
+            ...h, 
+            weight: idx < targetCount ? h.weight : 0 
+          }))
+        };
+      }
+      return cat;
+    }));
+  }, [strategyData, baseCategories]);
 
   // Recompute the effective range whenever active categories or hands change
   useEffect(() => {

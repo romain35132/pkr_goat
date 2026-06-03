@@ -81,6 +81,31 @@ const PokerEquityCalculator: React.FC = () => {
   const [postflopAllowedHands, setPostflopAllowedHands] = useState<string[]>([]);
   const [opponentProfile, setOpponentProfile] = useState<string>('default');
 
+  const [allStrategies, setAllStrategies] = useState<any[]>([]);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
+  const [selectedFlopStrategyId, setSelectedFlopStrategyId] = useState<string>('');
+
+  useEffect(() => {
+    const fetchStrategies = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/config/strategies');
+        if (response.ok) {
+          const data = await response.json();
+          setAllStrategies(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch strategies', err);
+      }
+    };
+    fetchStrategies();
+  }, []);
+
+  const preflopStrategies = useMemo(() => allStrategies.filter(s => s.street === 'PREFLOP'), [allStrategies]);
+  const flopStrategies = useMemo(() => {
+    if (!selectedStrategyId) return [];
+    return allStrategies.filter(s => s.street === 'FLOP' && s.parent_strategy_id?.toString() === selectedStrategyId);
+  }, [allStrategies, selectedStrategyId]);
+
   // Determine current street based on board cards length
   const getCurrentStreet = (cards: string[]): Street => {
     if (cards.length < 3) return 'Preflop';
@@ -202,6 +227,48 @@ const PokerEquityCalculator: React.FC = () => {
           </div>
         </div>
 
+        {currentStreet === 'Preflop' && preflopStrategies.length > 0 && (
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', color: '#7f8c8d' }}>
+              Importer une stratégie Preflop :
+            </label>
+            <select
+              value={selectedStrategyId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedStrategyId(id);
+                if (id) {
+                  const strategy = preflopStrategies.find(s => s.id.toString() === id);
+                  if (strategy && strategy.strategy_data) {
+                    // Si la strategy est stockée en string on la parse, sinon direct
+                    let dataToImport = strategy.strategy_data;
+                    if (typeof dataToImport === 'string') {
+                      try {
+                        dataToImport = JSON.parse(dataToImport);
+                      } catch (err) {}
+                    }
+                    if (typeof dataToImport === 'object') {
+                      handleRangeChange(dataToImport);
+                    }
+                  }
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #bdc3c7',
+                backgroundColor: 'white',
+              }}
+            >
+              <option value="">-- Sélectionner une stratégie --</option>
+              {preflopStrategies.map(s => (
+                <option key={s.id} value={s.id}>{s.title || `Stratégie #${s.id}`}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {currentStreet === 'Preflop' ? (
             <RangeSelector 
@@ -253,13 +320,39 @@ const PokerEquityCalculator: React.FC = () => {
 
         <h2 style={{ fontSize: '18px', marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Filtres</h2>
         {currentStreet !== 'Preflop' ? (
-          <CategoryFilter 
-            baseRange={getBaseRangeForCurrentStreet()}
-            board={boardCards}
-            onChange={handleRangeChange}
-            onRangeGroupsChange={handleRangeGroupsChange}
-            deadCards={[...playerCards, ...boardCards]}
-          />
+          <>
+            {currentStreet === 'Flop' && flopStrategies.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold' }}>
+                  Importer une stratégie Flop (Réaction) :
+                </label>
+                <select
+                  value={selectedFlopStrategyId}
+                  onChange={(e) => setSelectedFlopStrategyId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    border: '1px solid #bdc3c7',
+                    backgroundColor: 'white',
+                  }}
+                >
+                  <option value="">-- Sélectionner une stratégie Flop --</option>
+                  {flopStrategies.map(s => (
+                    <option key={s.id} value={s.id}>{s.title || `Stratégie #${s.id}`}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <CategoryFilter 
+              baseRange={getBaseRangeForCurrentStreet()}
+              board={boardCards}
+              onChange={handleRangeChange}
+              onRangeGroupsChange={handleRangeGroupsChange}
+              deadCards={[...playerCards, ...boardCards]}
+              strategyData={selectedFlopStrategyId ? allStrategies.find(s => s.id.toString() === selectedFlopStrategyId)?.strategy_data : undefined}
+            />
+          </>
         ) : (
           <div style={{ color: '#7f8c8d', fontStyle: 'italic', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'center' }}>
             Les filtres seront disponibles au Flop, Turn et River.
