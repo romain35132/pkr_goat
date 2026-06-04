@@ -84,7 +84,6 @@ const PokerEquityCalculator: React.FC = () => {
 
   const [postflopRangeGroups, setPostflopRangeGroups] = useState<Record<string, number>>({});
   const [postflopAllowedHands, setPostflopAllowedHands] = useState<string[]>([]);
-  const [opponentProfile, setOpponentProfile] = useState<string>('default');
 
   const [allStrategies, setAllStrategies] = useState<any[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
@@ -399,29 +398,6 @@ const PokerEquityCalculator: React.FC = () => {
       {/* Column 2: Filters */}
       <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#fff' }}>
         
-        <div style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '10px', color: '#2c3e50', fontSize: '16px' }}>
-            Profil de l'adversaire
-          </label>
-          <select 
-            value={opponentProfile}
-            onChange={(e) => setOpponentProfile(e.target.value)}
-            style={{ 
-              width: '100%', 
-              padding: '10px', 
-              borderRadius: '6px', 
-              border: '1px solid #bdc3c7', 
-              backgroundColor: 'white', 
-              fontSize: '14px',
-              cursor: 'pointer',
-              outline: 'none'
-            }}
-          >
-            <option value="default">Standard (Aucun profil)</option>
-            <option value="fish_passive_50_3">Fish passif 50/3</option>
-          </select>
-        </div>
-
         <h2 style={{ fontSize: '18px', marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Filtres</h2>
         {currentStreet !== 'Preflop' ? (
           <>
@@ -493,9 +469,11 @@ const PokerEquityCalculator: React.FC = () => {
         )}
       </div>
 
-      {/* Column 3: My Hand, Board, Equity */}
-      <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: '#f8f9fa' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Columns 3 & 4: My Hand, Board, EV, Equity */}
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flex: '2', minWidth: '700px', margin: 0, padding: 0 }}>
+        
+        {/* Column 3: My Hand, Board */}
+        <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <div 
@@ -553,6 +531,11 @@ const PokerEquityCalculator: React.FC = () => {
             </div>
           </div>
 
+        </div>
+
+        {/* Column 4: EV & Results */}
+        <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Paramètres d'EV</h3>
             
@@ -702,8 +685,8 @@ const PokerEquityCalculator: React.FC = () => {
               </div>
             </div>
           )}
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 };
