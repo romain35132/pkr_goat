@@ -53,6 +53,9 @@ pub struct Strategy {
     pub pot_size_bb: Option<f64>,
     pub hero_action: Option<String>,
     pub action_size: Option<String>,
+    pub action_vilain: Option<String>,
+    pub position_relative: Option<String>,
+    pub position_preflop: Option<String>,
     pub strategy_data: Value,
     pub created_at: Option<DateTime<Utc>>,
 }
@@ -66,5 +69,8 @@ pub struct CreateStrategy {
     pub pot_size_bb: Option<f64>,
     pub hero_action: Option<String>,
     pub action_size: Option<String>,
+    pub action_vilain: Option<String>,
+    pub position_relative: Option<String>,
+    pub position_preflop: Option<String>,
     pub strategy_data: Value,
 }

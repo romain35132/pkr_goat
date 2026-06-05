@@ -174,7 +174,7 @@ async fn create_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<(StatusCode, Json<Strategy>), StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "INSERT INTO strategies (title, profile_id, parent_strategy_id, street, pot_size_bb, hero_action, action_size, strategy_data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *"
+        "INSERT INTO strategies (title, profile_id, parent_strategy_id, street, pot_size_bb, hero_action, action_size, action_vilain, position_relative, position_preflop, strategy_data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
@@ -183,6 +183,9 @@ async fn create_strategy(
     .bind(payload.pot_size_bb)
     .bind(&payload.hero_action)
     .bind(&payload.action_size)
+    .bind(&payload.action_vilain)
+    .bind(&payload.position_relative)
+    .bind(&payload.position_preflop)
     .bind(&payload.strategy_data)
     .fetch_one(&state.db)
     .await
@@ -197,7 +200,7 @@ async fn update_strategy(
     Json(payload): Json<CreateStrategy>,
 ) -> Result<Json<Strategy>, StatusCode> {
     let strategy = sqlx::query_as::<_, Strategy>(
-        "UPDATE strategies SET title = $1, profile_id = $2, parent_strategy_id = $3, street = $4, pot_size_bb = $5, hero_action = $6, action_size = $7, strategy_data = $8 WHERE id = $9 RETURNING *"
+        "UPDATE strategies SET title = $1, profile_id = $2, parent_strategy_id = $3, street = $4, pot_size_bb = $5, hero_action = $6, action_size = $7, action_vilain = $8, position_relative = $9, position_preflop = $10, strategy_data = $11 WHERE id = $12 RETURNING *"
     )
     .bind(&payload.title)
     .bind(payload.profile_id)
@@ -206,6 +209,9 @@ async fn update_strategy(
     .bind(payload.pot_size_bb)
     .bind(&payload.hero_action)
     .bind(&payload.action_size)
+    .bind(&payload.action_vilain)
+    .bind(&payload.position_relative)
+    .bind(&payload.position_preflop)
     .bind(&payload.strategy_data)
     .bind(id)
     .fetch_optional(&state.db)

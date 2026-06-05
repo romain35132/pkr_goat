@@ -6,11 +6,13 @@ interface CategoryFilterProps {
   board: string[];
   onChange: (newRange: Record<string, number>) => void;
   onRangeGroupsChange?: (groups: Record<string, number>, allowed: string[]) => void;
+  onBaseCategoriesChange?: (categories: CategoryResult[]) => void;
+  onActiveCategoriesChange?: (activeCategories: Record<string, boolean>) => void;
   deadCards?: string[];
   strategyData?: Record<string, number> | string;
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, deadCards = [], strategyData }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, onBaseCategoriesChange, onActiveCategoriesChange, deadCards = [], strategyData }) => {
   const [categories, setCategories] = useState<CategoryResult[]>([]);
   const [baseCategories, setBaseCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
@@ -66,7 +68,11 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         });
 
         setCategories(data.categories);
-        setBaseCategories(JSON.parse(JSON.stringify(data.categories)));
+        const newBaseCategories = JSON.parse(JSON.stringify(data.categories));
+        setBaseCategories(newBaseCategories);
+        if (onBaseCategoriesChange) {
+          onBaseCategoriesChange(newBaseCategories);
+        }
         
         // By default, all are active
         const initialActive: Record<string, boolean> = {};
@@ -141,6 +147,11 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     if (categories.length === 0) return;
     onChange(effectiveRange);
   }, [effectiveRange]);
+
+  useEffect(() => {
+    if (Object.keys(activeCategories).length === 0) return;
+    onActiveCategoriesChange?.(activeCategories);
+  }, [activeCategories, onActiveCategoriesChange]);
 
   const handleToggle = (category: string) => {
     setActiveCategories(prev => ({ ...prev, [category]: !prev[category] }));

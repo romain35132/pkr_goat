@@ -35,9 +35,9 @@ export const CardSelector: React.FC<CardSelectorProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {SUITS.map((suit) => (
-        <div key={suit.symbol} style={{ display: 'flex', gap: '5px' }}>
+        <div key={suit.symbol} style={{ display: 'flex', gap: '3px' }}>
           {VALUES.map((value) => {
             const card = `${value}${suit.symbol}`;
             const isSelected = selectedCards.includes(card);
@@ -50,10 +50,10 @@ export const CardSelector: React.FC<CardSelectorProps> = ({
                 onClick={() => toggleCard(card)}
                 disabled={isDisabled}
                 style={{
-                  width: '35px',
-                  height: '45px',
+                  width: '32px',
+                  height: '28px',
                   display: 'flex',
-                  flexDirection: 'column',
+                  flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isSelected ? '#f1c40f' : isDisabled ? '#ecf0f1' : 'white',
@@ -61,14 +61,15 @@ export const CardSelector: React.FC<CardSelectorProps> = ({
                   border: `1px solid ${isSelected ? '#f39c12' : '#bdc3c7'}`,
                   borderRadius: '4px',
                   cursor: isDisabled ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontWeight: 'bold',
                   opacity: isDisabled ? 0.5 : 1,
                   padding: 0,
+                  gap: '2px'
                 }}
               >
                 <span>{value}</span>
-                <span style={{ fontSize: '16px' }}>{suit.icon}</span>
+                <span style={{ fontSize: '14px' }}>{suit.icon}</span>
               </button>
             );
           })}

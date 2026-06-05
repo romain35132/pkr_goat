@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { CardSelector } from './components/CardSelector';
 import { RangeSelector, getComboCount } from './components/RangeSelector';
 import { CategoryFilter } from './components/CategoryFilter';
+import { CategoryResult } from './components/CategoryDetailModal';
 
 interface EquityResult {
   equity: number;
@@ -88,6 +89,10 @@ const PokerEquityCalculator: React.FC = () => {
   const [allStrategies, setAllStrategies] = useState<any[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
   const [selectedFlopStrategyId, setSelectedFlopStrategyId] = useState<string>('');
+  
+  const [baseCategories, setBaseCategories] = useState<CategoryResult[]>([]);
+  const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
+  const [strategiesResults, setStrategiesResults] = useState<Record<string, { equity: number, ev: number, loading: boolean, error?: string }>>({});
 
   useEffect(() => {
     const fetchStrategies = async () => {
@@ -121,6 +126,73 @@ const PokerEquityCalculator: React.FC = () => {
   const currentStreet = getCurrentStreet(boardCards);
   const currentRange = ranges[currentStreet];
 
+  const rangeToString = (range: Record<string, number>) =>
+    Object.entries(range)
+      .map(([hand, weight]) => (weight === 100 ? hand : `${hand}:${weight}`))
+      .join(', ');
+
+  // Helper to compute range for a strategy, respecting active category filters
+  const getStrategyRange = (
+    strategyData: any,
+    baseCats: CategoryResult[],
+    activeCats: Record<string, boolean>,
+  ): Record<string, number> => {
+    if (!strategyData || baseCats.length === 0) return {};
+
+    let parsedStrategy: Record<string, number>;
+    if (typeof strategyData === 'string') {
+      try {
+        parsedStrategy = JSON.parse(strategyData);
+      } catch {
+        return {};
+      }
+    } else {
+      parsedStrategy = strategyData;
+    }
+
+    const newRange: Record<string, number> = {};
+    baseCats.forEach(cat => {
+      if (activeCats[cat.category] === false) return;
+
+      let strategyWeight = parsedStrategy[cat.category];
+      if (strategyWeight === undefined && (cat.category === 'BackdoorFlushDraw1Card' || cat.category === 'BackdoorFlushDraw2Card')) {
+        strategyWeight = parsedStrategy['BackdoorFlushDraw'];
+      }
+      if (typeof strategyWeight === 'string') {
+         strategyWeight = parseInt(strategyWeight, 10);
+      }
+      if (strategyWeight !== undefined && !isNaN(strategyWeight)) {
+        const targetCount = Math.round(cat.hands.length * (strategyWeight / 100));
+        cat.hands.forEach((h, idx) => {
+          const weight = idx < targetCount ? h.weight : 0;
+          if (weight > 0) {
+            newRange[h.hand] = Math.max(newRange[h.hand] || 0, weight);
+          }
+        });
+      } else {
+        // If no strategy weight, assume 100% of base weight
+        cat.hands.forEach(h => {
+          if (h.weight > 0) {
+            newRange[h.hand] = Math.max(newRange[h.hand] || 0, h.weight);
+          }
+        });
+      }
+    });
+
+    return newRange;
+  };
+
+  // Calculate EV helper
+  const calculateEV = (eq: number, action: string, pot: number, amount: number, fe: number) => {
+    if (action === 'Check/Fold' || action === 'FOLD' || action === 'CHECK') return 0;
+    if (action === 'Call' || action === 'CALL') return (eq * pot) - ((1 - eq) * amount);
+    if (action === 'Bet/Raise' || action === 'BET' || action === 'RAISE') {
+      const fePct = fe / 100;
+      return (fePct * pot) + ((1 - fePct) * ((eq * (pot + amount)) - ((1 - eq) * amount)));
+    }
+    return 0;
+  };
+
   const opponentCombos = useMemo(() => {
     let total = 0;
     const deadCards = [...playerCards, ...boardCards];
@@ -151,6 +223,107 @@ const PokerEquityCalculator: React.FC = () => {
     return total;
   }, [ranges, currentStreet, playerCards, boardCards]);
 
+  // Auto-calculate all flop strategies
+  useEffect(() => {
+    let isActive = true;
+
+    const calculateAllStrategies = async () => {
+      if (currentStreet !== 'Flop' || flopStrategies.length === 0 || playerCards.length !== 2 || baseCategories.length === 0 || Object.keys(activeCategories).length === 0) {
+        setStrategiesResults({});
+        return;
+      }
+
+      const newResults: Record<string, any> = {};
+      flopStrategies.forEach(s => {
+        newResults[s.id] = { loading: true };
+      });
+      setStrategiesResults(newResults);
+
+      for (const strategy of flopStrategies) {
+        if (!isActive) break;
+        
+        const strategyRangeObj = getStrategyRange(strategy.strategy_data, baseCategories, activeCategories);
+        const strategyRangeStr = rangeToString(strategyRangeObj);
+        if (!strategyRangeStr) {
+          setStrategiesResults(prev => ({ ...prev, [strategy.id]: { loading: false, error: 'Range vide' } }));
+          continue;
+        }
+
+        try {
+          const response = await fetch('/api/v1/equity/monte-carlo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              player_hand: playerCards.join(''),
+              opponent_range: strategyRangeStr,
+              board: boardCards.join(' '),
+              iterations: 50000, // Slightly fewer iterations for speed
+            }),
+          });
+
+          const data = await response.json();
+          if (!isActive) break;
+
+          if (!response.ok) throw new Error(data.error || 'Erreur');
+
+          // Calculate EV for this strategy
+          let pot = strategy.pot_size_bb || potSize || 0;
+          let action = strategy.hero_action || 'Call';
+          let amount = 0;
+          if (strategy.action_size) {
+            let parsedAmount = parseFloat(strategy.action_size);
+            if (!isNaN(parsedAmount)) {
+              if (strategy.action_size.includes('%') && pot) {
+                parsedAmount = (parsedAmount / 100) * pot;
+              }
+              amount = parsedAmount;
+            }
+          }
+          
+          // Estimate fold equity based on combos
+          let strategyCombos = 0;
+          const deadCards = [...playerCards, ...boardCards];
+
+          for (const [hand, weight] of Object.entries(strategyRangeObj)) {
+            if (weight > 0) {
+              strategyCombos += getComboCount(hand, deadCards) * (weight / 100);
+            }
+          }
+          
+          let fe = 0;
+          if (baseCombos > 0) {
+            fe = ((baseCombos - strategyCombos) / baseCombos) * 100;
+            fe = Math.max(0, Math.min(100, fe));
+          }
+
+          const ev = calculateEV(data.equity, action, pot, amount, fe);
+
+          setStrategiesResults(prev => ({
+            ...prev,
+            [strategy.id]: {
+              equity: data.equity,
+              ev,
+              fe,
+              loading: false
+            }
+          }));
+        } catch (err: any) {
+          if (!isActive) break;
+          setStrategiesResults(prev => ({
+            ...prev,
+            [strategy.id]: { loading: false, error: err.message }
+          }));
+        }
+      }
+    };
+
+    calculateAllStrategies();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentStreet, flopStrategies, playerCards, boardCards, baseCategories, activeCategories, potSize, baseCombos]);
+
   useEffect(() => {
     if (currentStreet !== 'Preflop' && baseCombos > 0) {
       const fe = ((baseCombos - opponentCombos) / baseCombos) * 100;
@@ -172,6 +345,10 @@ const PokerEquityCalculator: React.FC = () => {
     setPostflopRangeGroups(groups);
     setPostflopAllowedHands(allowed);
   };
+
+  const handleActiveCategoriesChange = useCallback((active: Record<string, boolean>) => {
+    setActiveCategories(active);
+  }, []);
 
   // Auto-collapse when selections are complete
   useEffect(() => {
@@ -294,10 +471,77 @@ const PokerEquityCalculator: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', fontFamily: 'sans-serif', backgroundColor: '#f0f2f5' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', fontFamily: 'sans-serif', backgroundColor: '#f0f2f5' }}>
       
-      {/* Column 1: Range Selector */}
-      <div style={{ flex: '1.2', minWidth: '400px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#fff', display: 'flex', flexDirection: 'column' }}>
+      {/* Top Row: My Hand, Board */}
+      <div style={{ display: 'flex', gap: '20px', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #e0e0e0', maxHeight: '190px', flexShrink: 0 }}>
+        
+        <div style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
+          <div 
+            onClick={() => setIsPlayerHandOpen(!isPlayerHandOpen)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: '5px' }}
+          >
+            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
+              Votre Main ({playerCards.length}/2)
+            </label>
+            <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
+              {isPlayerHandOpen ? '▼ Replier' : '▶ Déplier'}
+            </span>
+          </div>
+          
+          {isPlayerHandOpen && (
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <CardSelector 
+                selectedCards={playerCards} 
+                onChange={setPlayerCards} 
+                maxCards={2} 
+                disabledCards={boardCards}
+              />
+            </div>
+          )}
+          {!isPlayerHandOpen && (
+            <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
+              Sélection: <SelectedCardsDisplay cards={playerCards} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
+          <div 
+            onClick={() => setIsBoardOpen(!isBoardOpen)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: '5px' }}
+          >
+            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
+              Board ({boardCards.length}/5)
+            </label>
+            <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
+              {isBoardOpen ? '▼ Replier' : '▶ Déplier'}
+            </span>
+          </div>
+          
+          {isBoardOpen && (
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <CardSelector 
+                selectedCards={boardCards} 
+                onChange={setBoardCards} 
+                maxCards={5} 
+                disabledCards={playerCards}
+              />
+            </div>
+          )}
+          {!isBoardOpen && (
+            <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
+              Sélection: <SelectedCardsDisplay cards={boardCards} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Row: Range Selector, Filters, EV & Results */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        
+        {/* Column 1: Range Selector */}
+        <div style={{ flex: '1.2', minWidth: '400px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#fff', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <label style={{ fontWeight: 'bold', fontSize: '18px', color: '#2c3e50' }}>
             Range Adverse - {currentStreet}
@@ -458,6 +702,8 @@ const PokerEquityCalculator: React.FC = () => {
               board={boardCards}
               onChange={handleRangeChange}
               onRangeGroupsChange={handleRangeGroupsChange}
+              onBaseCategoriesChange={setBaseCategories}
+              onActiveCategoriesChange={handleActiveCategoriesChange}
               deadCards={[...playerCards, ...boardCards]}
               strategyData={selectedFlopStrategyId ? allStrategies.find(s => s.id.toString() === selectedFlopStrategyId)?.strategy_data : undefined}
             />
@@ -469,72 +715,8 @@ const PokerEquityCalculator: React.FC = () => {
         )}
       </div>
 
-      {/* Columns 3 & 4: My Hand, Board, EV, Equity */}
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flex: '2', minWidth: '700px', margin: 0, padding: 0 }}>
-        
-        {/* Column 3: My Hand, Board */}
-        <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div 
-              onClick={() => setIsPlayerHandOpen(!isPlayerHandOpen)}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-            >
-              <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
-                Votre Main ({playerCards.length}/2)
-              </label>
-              <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
-                {isPlayerHandOpen ? '▼ Replier' : '▶ Déplier'}
-              </span>
-            </div>
-            
-            {isPlayerHandOpen && (
-              <div style={{ marginTop: '15px' }}>
-                <CardSelector 
-                  selectedCards={playerCards} 
-                  onChange={setPlayerCards} 
-                  maxCards={2} 
-                  disabledCards={boardCards}
-                />
-              </div>
-            )}
-            <div style={{ marginTop: '10px', fontSize: '14px', color: '#7f8c8d' }}>
-              Sélection: <SelectedCardsDisplay cards={playerCards} />
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <div 
-              onClick={() => setIsBoardOpen(!isBoardOpen)}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-            >
-              <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
-                Board ({boardCards.length}/5)
-              </label>
-              <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
-                {isBoardOpen ? '▼ Replier' : '▶ Déplier'}
-              </span>
-            </div>
-            
-            {isBoardOpen && (
-              <div style={{ marginTop: '15px' }}>
-                <CardSelector 
-                  selectedCards={boardCards} 
-                  onChange={setBoardCards} 
-                  maxCards={5} 
-                  disabledCards={playerCards}
-                />
-              </div>
-            )}
-            <div style={{ marginTop: '10px', fontSize: '14px', color: '#7f8c8d' }}>
-              Sélection: <SelectedCardsDisplay cards={boardCards} />
-            </div>
-          </div>
-
-        </div>
-
-        {/* Column 4: EV & Results */}
-        <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Column 3: EV & Results */}
+        <form onSubmit={handleSubmit} style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px', margin: 0 }}>
           
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Paramètres d'EV</h3>
@@ -685,8 +867,41 @@ const PokerEquityCalculator: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-      </form>
+
+          {/* All Strategies Results */}
+          {currentStreet === 'Flop' && flopStrategies.length > 0 && playerCards.length === 2 && (
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Toutes les stratégies (Flop)</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {flopStrategies.map(strategy => {
+                  const res = strategiesResults[strategy.id];
+                  return (
+                    <div key={strategy.id} style={{ padding: '10px', borderRadius: '6px', border: '1px solid #ecf0f1', backgroundColor: '#f8f9fa' }}>
+                      <div style={{ fontWeight: 'bold', color: '#2c3e50', marginBottom: '5px' }}>
+                        {strategy.title || `Stratégie #${strategy.id}`}
+                      </div>
+                      {res?.loading ? (
+                        <div style={{ fontSize: '13px', color: '#7f8c8d' }}>Calcul en cours...</div>
+                      ) : res?.error ? (
+                        <div style={{ fontSize: '13px', color: '#e74c3c' }}>Erreur: {res.error}</div>
+                      ) : res ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                          <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Eq: {(res.equity * 100).toFixed(1)}%</span>
+                          <span style={{ color: res.ev > 0 ? '#27ae60' : (res.ev < 0 ? '#e74c3c' : '#7f8c8d'), fontWeight: 'bold' }}>
+                            EV: {res.ev > 0 ? '+' : ''}{res.ev.toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: '#7f8c8d' }}>En attente...</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </form>
+      </div>
     </div>
   );
 };

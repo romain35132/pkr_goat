@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { RangeSelector } from '../RangeSelector';
 
@@ -57,9 +57,53 @@ interface Strategy {
   pot_size_bb?: number;
   hero_action?: 'BET' | 'CALL' | 'CHECK';
   action_size?: string;
+  action_vilain?: string;
+  position_relative?: 'OOP' | 'IP';
+  position_preflop?: 'UTG' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB';
   strategy_data: any;
   created_at: string;
 }
+
+interface OrderedStrategy {
+  strategy: Strategy;
+  depth: number;
+}
+
+const buildOrderedStrategies = (strategies: Strategy[]): OrderedStrategy[] => {
+  const childrenByParent = new Map<number | null, Strategy[]>();
+
+  for (const strategy of strategies) {
+    const parentId = strategy.parent_strategy_id;
+    if (!childrenByParent.has(parentId)) {
+      childrenByParent.set(parentId, []);
+    }
+    childrenByParent.get(parentId)!.push(strategy);
+  }
+
+  const sortById = (a: Strategy, b: Strategy) => a.id - b.id;
+  const result: OrderedStrategy[] = [];
+  const visited = new Set<number>();
+
+  const visit = (parentId: number | null, depth: number) => {
+    const children = (childrenByParent.get(parentId) || []).sort(sortById);
+    for (const child of children) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      result.push({ strategy: child, depth });
+      visit(child.id, depth + 1);
+    }
+  };
+
+  visit(null, 0);
+
+  for (const strategy of [...strategies].sort(sortById)) {
+    if (!visited.has(strategy.id)) {
+      result.push({ strategy, depth: 0 });
+    }
+  }
+
+  return result;
+};
 
 const Strategies: React.FC = () => {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -137,6 +181,17 @@ const Strategies: React.FC = () => {
         }
       }
 
+      strategyDataObj = strategyDataObj || {};
+
+      // Toujours sauvegarder toutes les catégories (même à zéro) pour le postflop
+      if (currentStrategy.street !== 'PREFLOP') {
+        Object.keys(categoryNames).forEach(cat => {
+          strategyDataObj[cat] = getStrategyValue(cat, strategyDataObj);
+        });
+      }
+
+      const isPreflop = currentStrategy.street === 'PREFLOP';
+
       const response = await fetch(url, {
         method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,6 +203,9 @@ const Strategies: React.FC = () => {
           pot_size_bb: currentStrategy.pot_size_bb ? parseFloat(currentStrategy.pot_size_bb.toString()) : null,
           hero_action: currentStrategy.hero_action || null,
           action_size: (currentStrategy.hero_action === 'BET' || currentStrategy.hero_action === 'CALL') ? (currentStrategy.action_size || null) : null,
+          action_vilain: currentStrategy.action_vilain || null,
+          position_relative: !isPreflop ? (currentStrategy.position_relative || null) : null,
+          position_preflop: isPreflop ? (currentStrategy.position_preflop || null) : null,
           strategy_data: strategyDataObj || {},
         }),
       });
@@ -177,10 +235,11 @@ const Strategies: React.FC = () => {
   };
 
   const getProfileName = (id: number) => profiles.find(p => p.id === id)?.name || id;
-  const getStrategyTitle = (id: number) => {
-    const strat = strategies.find(s => s.id === id);
-    return strat ? (strat.title || `Stratégie #${strat.id}`) : id;
-  };
+
+  const orderedStrategies = useMemo(
+    () => buildOrderedStrategies(strategies),
+    [strategies]
+  );
 
   if (loading) return <div className="p-4">Chargement...</div>;
 
@@ -234,7 +293,15 @@ const Strategies: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700">Street</label>
               <select
                 value={currentStrategy.street || 'PREFLOP'}
-                onChange={e => setCurrentStrategy({...currentStrategy, street: e.target.value})}
+                onChange={e => {
+                  const street = e.target.value;
+                  setCurrentStrategy({
+                    ...currentStrategy,
+                    street,
+                    position_relative: street === 'PREFLOP' ? undefined : currentStrategy.position_relative,
+                    position_preflop: street !== 'PREFLOP' ? undefined : currentStrategy.position_preflop,
+                  });
+                }}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
               >
                 <option value="PREFLOP">PREFLOP</option>
@@ -291,6 +358,47 @@ const Strategies: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
                   placeholder="Ex: 33%, 3bb, All-in"
                 />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Action Vilain</label>
+              <input
+                type="text"
+                value={currentStrategy.action_vilain || ''}
+                onChange={e => setCurrentStrategy({...currentStrategy, action_vilain: e.target.value})}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                placeholder="Ex: Open 2.5bb, Check, Bet 33%"
+              />
+            </div>
+            {currentStrategy.street === 'PREFLOP' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Position Preflop</label>
+                <select
+                  value={currentStrategy.position_preflop || ''}
+                  onChange={e => setCurrentStrategy({...currentStrategy, position_preflop: e.target.value as Strategy['position_preflop'] || undefined})}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                >
+                  <option value="">Sélectionner une position</option>
+                  <option value="UTG">UTG</option>
+                  <option value="HJ">HJ</option>
+                  <option value="CO">CO</option>
+                  <option value="BTN">BTN</option>
+                  <option value="SB">SB</option>
+                  <option value="BB">BB</option>
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Position Relative</label>
+                <select
+                  value={currentStrategy.position_relative || ''}
+                  onChange={e => setCurrentStrategy({...currentStrategy, position_relative: e.target.value as Strategy['position_relative'] || undefined})}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                >
+                  <option value="">Sélectionner une position</option>
+                  <option value="OOP">OOP (Out of Position)</option>
+                  <option value="IP">IP (In Position)</option>
+                </select>
               </div>
             )}
             <div className="col-span-1 md:col-span-2">
@@ -382,28 +490,30 @@ const Strategies: React.FC = () => {
         </form>
       )}
 
-      <div className="bg-white shadow-md rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="bg-white shadow-md rounded-lg overflow-x-auto">
+        <table className="w-full table-fixed divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titre / ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Street</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contexte</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data (Aperçu)</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="w-[30%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titre / ID</th>
+              <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
+              <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Street</th>
+              <th className="w-[33%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contexte</th>
+              <th className="w-[10%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {strategies.map(strategy => (
+            {orderedStrategies.map(({ strategy, depth }) => (
               <tr key={strategy.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {strategy.title || `Stratégie #${strategy.id}`}
-                  {strategy.parent_strategy_id && (
-                    <div className="text-xs text-gray-500 font-normal mt-1">
-                      Parent: {getStrategyTitle(strategy.parent_strategy_id)}
-                    </div>
+                <td
+                  className="px-6 py-4 text-sm font-medium text-gray-900"
+                  style={{ paddingLeft: `calc(1.5rem + ${depth * 1.25}rem)` }}
+                >
+                  {depth > 0 && (
+                    <span className="text-gray-300 mr-1.5 select-none">└</span>
                   )}
+                  <span className="break-words">
+                    {strategy.title || `Stratégie #${strategy.id}`}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div className="font-medium text-blue-600">{getProfileName(strategy.profile_id)}</div>
@@ -423,13 +533,25 @@ const Strategies: React.FC = () => {
                   )}
                   {strategy.hero_action && (
                     <div>
-                      Action: <span className="font-medium">{strategy.hero_action}</span>
+                      Action Hero: <span className="font-medium">{strategy.hero_action}</span>
                       {strategy.action_size && ` (${strategy.action_size})`}
                     </div>
                   )}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500 truncate max-w-xs">
-                  {JSON.stringify(strategy.strategy_data)}
+                  {strategy.action_vilain && (
+                    <div>
+                      Action Vilain: <span className="font-medium">{strategy.action_vilain}</span>
+                    </div>
+                  )}
+                  {strategy.street === 'PREFLOP' && strategy.position_preflop && (
+                    <div>
+                      Position: <span className="font-medium">{strategy.position_preflop}</span>
+                    </div>
+                  )}
+                  {strategy.street !== 'PREFLOP' && strategy.position_relative && (
+                    <div>
+                      Position: <span className="font-medium">{strategy.position_relative}</span>
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <button

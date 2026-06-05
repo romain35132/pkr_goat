@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS strategies (
     pot_size_bb DOUBLE PRECISION,
     hero_action VARCHAR(10) CHECK (hero_action IN ('BET', 'CALL', 'CHECK')),
     action_size VARCHAR(50),
+    action_vilain TEXT,
+    position_relative VARCHAR(3) CHECK (position_relative IN ('OOP', 'IP')),
+    position_preflop VARCHAR(10) CHECK (position_preflop IN ('UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB')),
     strategy_data JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
