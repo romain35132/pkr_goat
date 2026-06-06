@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { CategoryResult, CategorizedHand, CategoryDetailModal, getHandGroup } from './CategoryDetailModal';
+import { isCategoryVisible } from '../utils/categoryUtils';
+import { applyStrategyToCategories, buildEffectiveRange } from '../utils/strategyRangeUtils';
 
 interface CategoryFilterProps {
   baseRange: Record<string, number>;
@@ -10,9 +12,12 @@ interface CategoryFilterProps {
   onActiveCategoriesChange?: (activeCategories: Record<string, boolean>) => void;
   deadCards?: string[];
   strategyData?: Record<string, number> | string;
+  strategyId?: number;
+  /** Incrémenté à chaque sélection explicite de ligne pour forcer la réapplication */
+  filterRevision?: number;
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, onBaseCategoriesChange, onActiveCategoriesChange, deadCards = [], strategyData }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board, onChange, onRangeGroupsChange, onBaseCategoriesChange, onActiveCategoriesChange, deadCards = [], strategyData, strategyId, filterRevision = 0 }) => {
   const [categories, setCategories] = useState<CategoryResult[]>([]);
   const [baseCategories, setBaseCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
@@ -21,13 +26,52 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
   
   const [detailModal, setDetailModal] = useState<{ category: string; hands: CategorizedHand[] } | null>(null);
 
+  const strategyIdRef = useRef(strategyId);
+  const strategyDataRef = useRef(strategyData);
+  strategyIdRef.current = strategyId;
+  strategyDataRef.current = strategyData;
+
+  const categoryOrder = useMemo(() => [
+    'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight',
+    'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard',
+    'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
+    'PairWithTurnCard', 'PairWithRiverCard',
+    'HighCard', 'Overcard',
+    'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'TurnFlushDraw', 'FlopFlushDraw',
+    'Oesd2Card', 'Oesd1Card', 'Gutshot2Card', 'Gutshot1Card',
+    'BackdoorFlushDraw1Card', 'BackdoorFlushDraw2Card', 'BackdoorStraightDraw',
+    'MissDraw', 'Nothing',
+  ], []);
+
+  const applyStrategyFilter = useCallback((
+    base: CategoryResult[],
+    data: Record<string, number> | string | undefined,
+    id: number | undefined,
+  ) => {
+    const filtered = applyStrategyToCategories(base, data);
+    setCategories(filtered);
+
+    if (id !== undefined) {
+      const initialActive: Record<string, boolean> = {};
+      base.forEach(c => { initialActive[c.category] = true; });
+      setActiveCategories(initialActive);
+    }
+  }, []);
+
   useEffect(() => {
-    if (board.length < 3 || Object.keys(baseRange).length === 0) return;
-    
+    if (board.length < 3 || Object.keys(baseRange).length === 0) {
+      setCategories([]);
+      setBaseCategories([]);
+      return;
+    }
+
+    const abortController = new AbortController();
+
     const fetchCategories = async () => {
       setLoading(true);
       setError('');
-      
+      setCategories([]);
+
       const opponentRange = Object.entries(baseRange)
         .map(([hand, weight]) => (weight === 100 ? hand : `${hand}:${weight}`))
         .join(', ');
@@ -36,6 +80,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         const res = await fetch('/api/v1/range/categorize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: abortController.signal,
           body: JSON.stringify({
             opponent_range: opponentRange,
             board: board.join(' '),
@@ -49,98 +94,52 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         }
 
         const data: { categories: CategoryResult[] } = await res.json();
-        
-        // Sort categories by predefined order
-        const order = [
-          'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
-          'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
-          'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
-          'OnePair', 
-          'HighCard', 'Overcard',
-          'ComboDraw', 'OesdAndFd', 'GutshotAndFd', 'FlushDraw', 'Oesd2Card', 'Oesd1Card', 'Gutshot2Card', 'Gutshot1Card',
-          'BackdoorFlushDraw1Card', 'BackdoorFlushDraw2Card', 'BackdoorStraightDraw', 'Nothing'
-        ];
-        
+
         data.categories.sort((a, b) => {
-          const idxA = order.indexOf(a.category);
-          const idxB = order.indexOf(b.category);
+          const idxA = categoryOrder.indexOf(a.category);
+          const idxB = categoryOrder.indexOf(b.category);
           return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
         });
 
-        setCategories(data.categories);
-        const newBaseCategories = JSON.parse(JSON.stringify(data.categories));
+        const newBaseCategories = JSON.parse(JSON.stringify(data.categories)) as CategoryResult[];
         setBaseCategories(newBaseCategories);
-        if (onBaseCategoriesChange) {
-          onBaseCategoriesChange(newBaseCategories);
+        onBaseCategoriesChange?.(newBaseCategories);
+
+        applyStrategyFilter(newBaseCategories, strategyDataRef.current, strategyIdRef.current);
+
+        if (strategyIdRef.current === undefined) {
+          const initialActive: Record<string, boolean> = {};
+          newBaseCategories.forEach(c => { initialActive[c.category] = true; });
+          setActiveCategories(initialActive);
         }
-        
-        // By default, all are active
-        const initialActive: Record<string, boolean> = {};
-        data.categories.forEach(c => initialActive[c.category] = true);
-        setActiveCategories(initialActive);
       } catch (err: any) {
+        if (err.name === 'AbortError') return;
         setError(err.message);
       } finally {
-        setLoading(false);
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchCategories();
-  }, [baseRange, board.join(' '), deadCards.join(' ')]);
 
-  // Appliquer la strategyData quand elle change
+    return () => abortController.abort();
+  }, [baseRange, board.join(' '), deadCards.join(' '), categoryOrder, onBaseCategoriesChange, applyStrategyFilter]);
+
+  // Réappliquer la stratégie sans refetch (ex. sélection dans « Toutes les lignes »)
   useEffect(() => {
-    if (!strategyData || baseCategories.length === 0) return;
-    
-    let parsedStrategy: Record<string, number>;
-    if (typeof strategyData === 'string') {
-      try {
-        parsedStrategy = JSON.parse(strategyData);
-      } catch {
-        return;
-      }
-    } else {
-      parsedStrategy = strategyData;
-    }
+    if (loading || baseCategories.length === 0) return;
+    applyStrategyFilter(baseCategories, strategyData, strategyId);
+  }, [strategyId, strategyData, filterRevision, baseCategories, loading, applyStrategyFilter]);
 
-    setCategories(baseCategories.map(cat => {
-      let strategyWeight = parsedStrategy[cat.category];
-      
-      // Fallback pour les anciennes stratégies enregistrées sans les nouvelles catégories BDFD séparées
-      if (strategyWeight === undefined && (cat.category === 'BackdoorFlushDraw1Card' || cat.category === 'BackdoorFlushDraw2Card')) {
-        strategyWeight = parsedStrategy['BackdoorFlushDraw'];
-      }
+  const isCategoryVisibleForBoard = (category: string): boolean =>
+    isCategoryVisible(category, board.length);
 
-      if (typeof strategyWeight === 'string') {
-         strategyWeight = parseInt(strategyWeight, 10);
-      }
-      if (strategyWeight !== undefined && !isNaN(strategyWeight)) {
-        const targetCount = Math.round(cat.hands.length * (strategyWeight / 100));
-        return {
-          ...cat,
-          hands: cat.hands.map((h, idx) => ({ 
-            ...h, 
-            weight: idx < targetCount ? h.weight : 0 
-          }))
-        };
-      }
-      return cat;
-    }));
-  }, [strategyData, baseCategories]);
-
-  const effectiveRange = useMemo(() => {
-    const newRange: Record<string, number> = {};
-    categories.forEach(cat => {
-      if (activeCategories[cat.category]) {
-        cat.hands.forEach(h => {
-          if (h.weight > 0) {
-            newRange[h.hand] = Math.max(newRange[h.hand] || 0, h.weight);
-          }
-        });
-      }
-    });
-    return newRange;
-  }, [categories, activeCategories]);
+  const effectiveRange = useMemo(
+    () => buildEffectiveRange(categories, activeCategories, board.length),
+    [categories, activeCategories, board.length],
+  );
 
   // Recompute the effective range whenever active categories or hands change
   useEffect(() => {
@@ -186,24 +185,18 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
 
   const aggregatedGroupWeights = useMemo(() => {
     const groups: Record<string, number[]> = {};
-    categories.forEach(cat => {
-      if (activeCategories[cat.category]) {
-        cat.hands.forEach(h => {
-          if (h.weight > 0) {
-            const g = getHandGroup(h.hand);
-            if (!groups[g]) groups[g] = [];
-            groups[g].push(h.weight);
-          }
-        });
-      }
-    });
-    
+    for (const [hand, weight] of Object.entries(effectiveRange)) {
+      const g = getHandGroup(hand);
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(weight);
+    }
+
     const result: Record<string, number> = {};
     for (const [g, weights] of Object.entries(groups)) {
       result[g] = Math.max(...weights);
     }
     return result;
-  }, [categories, activeCategories]);
+  }, [effectiveRange]);
 
   const allowedHands = useMemo(() => {
     const groups = new Set<string>();
@@ -242,12 +235,15 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'IntermediatePair': 'Paire Intermédiaire',
     'Underpair': 'Underpair',
     'SmallPair': 'Petite Paire',
-    'OnePair': 'Paire',
+    'PairWithTurnCard': 'Paire avec la carte de la turn',
+    'PairWithRiverCard': 'Paire avec la carte de la river',
     'HighCard': 'Hauteur',
     'Overcard': 'Overcard',
     'Oesd2Card': 'OESD (2card)',
     'Oesd1Card': 'OESD (1card)',
     'FlushDraw': 'Flushdraw',
+    'TurnFlushDraw': 'Flush draw de la turn',
+    'FlopFlushDraw': 'Flush draw du flop',
     'Gutshot2Card': 'Gutshot (2card)',
     'Gutshot1Card': 'Gutshot (1card)',
     'ComboDraw': 'Combo draw',
@@ -256,6 +252,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'BackdoorFlushDraw1Card': '1 card backdoor flushdraw',
     'BackdoorFlushDraw2Card': '2 card backdoor flushdraw',
     'BackdoorStraightDraw': 'Backdoor quinte',
+    'MissDraw': 'Miss draw',
     'Nothing': 'Nothing'
   };
 
@@ -263,11 +260,12 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
     'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
     'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
-    'OnePair'
+    'PairWithTurnCard', 'PairWithRiverCard'
   ]);
 
-  const mainsFaites = categories.filter(c => madeHandsSet.has(c.category));
-  const leReste = categories.filter(c => !madeHandsSet.has(c.category));
+  const visibleCategories = categories.filter(c => isCategoryVisibleForBoard(c.category));
+  const mainsFaites = visibleCategories.filter(c => madeHandsSet.has(c.category));
+  const leReste = visibleCategories.filter(c => !madeHandsSet.has(c.category));
 
   const renderCategory = (cat: CategoryResult) => {
     const isActive = activeCategories[cat.category];

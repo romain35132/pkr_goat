@@ -21,12 +21,15 @@ pub enum HandCategory {
     IntermediatePair,
     Underpair,
     SmallPair,
-    OnePair, // Keep it for fallback or generic
+    PairWithTurnCard,
+    PairWithRiverCard,
     HighCard,
     
     Oesd1Card,
     Oesd2Card,
     FlushDraw,
+    TurnFlushDraw,
+    FlopFlushDraw,
     Gutshot1Card,
     Gutshot2Card,
     ComboDraw,
@@ -35,8 +38,43 @@ pub enum HandCategory {
     BackdoorFlushDraw1Card,
     BackdoorFlushDraw2Card,
     BackdoorStraightDraw,
+    MissDraw,
     Overcard,
     Nothing,
+}
+
+fn is_draw_category(cat: &HandCategory) -> bool {
+    matches!(
+        cat,
+        HandCategory::FlushDraw
+            | HandCategory::TurnFlushDraw
+            | HandCategory::FlopFlushDraw
+            | HandCategory::Oesd1Card
+            | HandCategory::Oesd2Card
+            | HandCategory::Gutshot1Card
+            | HandCategory::Gutshot2Card
+            | HandCategory::ComboDraw
+            | HandCategory::OesdAndFd
+            | HandCategory::GutshotAndFd
+            | HandCategory::BackdoorFlushDraw1Card
+            | HandCategory::BackdoorFlushDraw2Card
+    )
+}
+
+fn max_suit_count(cards: &[Card]) -> u8 {
+    let mut suit_counts = HashMap::new();
+    for c in cards {
+        *suit_counts.entry(c.suit).or_insert(0u8) += 1;
+    }
+    *suit_counts.values().max().unwrap_or(&0)
+}
+
+fn has_flush_draw(cards: &[Card]) -> bool {
+    max_suit_count(cards) == 4
+}
+
+fn is_made_flush(cards: &[Card]) -> bool {
+    max_suit_count(cards) >= 5
 }
 
 pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCategory> {
@@ -146,7 +184,7 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
 
             if is_hole_card_pair {
                 if board_values.is_empty() {
-                    if is_pocket_pair { HandCategory::Overpair } else { HandCategory::OnePair }
+                    if is_pocket_pair { HandCategory::Overpair } else { HandCategory::HighCard }
                 } else {
                     let board_pos = board_values.iter().position(|&v| v == pair_val);
 
@@ -166,7 +204,7 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
                             _ => HandCategory::SmallPair,
                         }
                     } else {
-                        HandCategory::OnePair
+                        HandCategory::HighCard
                     }
                 }
             } else {
@@ -181,13 +219,24 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
     if made_hand != HandCategory::HighCard {
         categories.push(made_hand.clone());
     }
-    
-    // Suit count
-    let mut suit_counts = HashMap::new();
-    for c in &cards {
-        *suit_counts.entry(c.suit).or_insert(0) += 1;
+
+    if board.len() >= 4 {
+        let turn_val = board[3].value as u8;
+        let is_set_on_turn = hole_val1 == hole_val2 && hole_val1 == turn_val;
+        if !is_set_on_turn && (hole_val1 == turn_val || hole_val2 == turn_val) {
+            categories.push(HandCategory::PairWithTurnCard);
+        }
     }
-    let max_suit_count = *suit_counts.values().max().unwrap_or(&0);
+
+    if board.len() >= 5 {
+        let river_val = board[4].value as u8;
+        let is_set_on_river = hole_val1 == hole_val2 && hole_val1 == river_val;
+        if !is_set_on_river && (hole_val1 == river_val || hole_val2 == river_val) {
+            categories.push(HandCategory::PairWithRiverCard);
+        }
+    }
+    
+    let max_suit_count_val = max_suit_count(&cards);
     
     // Straight outs helper
     let check_outs = |cards_subset: &[Card]| -> (bool, u8) {
@@ -248,13 +297,18 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
         }
     }
     
-    let is_flush = max_suit_count >= 5;
+    let is_flush = is_made_flush(&cards);
     
-    let fd = max_suit_count == 4 && !is_flush;
+    let fd = max_suit_count_val == 4 && !is_flush;
     let mut bdfd1 = false;
     let mut bdfd2 = false;
 
-    if max_suit_count == 3 && board.len() == 3 && !is_flush {
+    let mut suit_counts = HashMap::new();
+    for c in &cards {
+        *suit_counts.entry(c.suit).or_insert(0) += 1;
+    }
+
+    if max_suit_count_val == 3 && (board.len() == 3 || board.len() == 4) && !is_flush {
         let max_suit = suit_counts.iter().max_by_key(|&(_, count)| count).unwrap().0;
         let mut hole_suit_count = 0;
         if hole_cards.0.suit == *max_suit { hole_suit_count += 1; }
@@ -292,42 +346,68 @@ pub fn categorize_hand(hole_cards: &HoleCards, board: &[Card]) -> Vec<HandCatego
         }
     }
 
-    if fd { categories.push(HandCategory::FlushDraw); }
-    if oesd {
-        if oesd1 { categories.push(HandCategory::Oesd1Card); }
-        else { categories.push(HandCategory::Oesd2Card); }
-    }
-    if gutshot {
-        if gutshot1 { categories.push(HandCategory::Gutshot1Card); }
-        else { categories.push(HandCategory::Gutshot2Card); }
-    }
-    if overcard { categories.push(HandCategory::Overcard); }
-    
-    if oesd && fd { categories.push(HandCategory::OesdAndFd); }
-    if gutshot && fd { categories.push(HandCategory::GutshotAndFd); }
-    
-    let has_pair = matches!(made_hand, 
-        HandCategory::OnePair | 
-        HandCategory::Overpair | 
-        HandCategory::TopPair | 
-        HandCategory::SecondPair | 
-        HandCategory::ThirdPair | 
-        HandCategory::IntermediatePair | 
-        HandCategory::Underpair | 
-        HandCategory::SmallPair |
-        HandCategory::TwoPairBothHoleCards | 
-        HandCategory::TwoPairOneHoleCard
-    );
-    if has_pair && (fd || oesd || gutshot) {
-        categories.push(HandCategory::ComboDraw);
-    }
-    
-    if bdfd1 { categories.push(HandCategory::BackdoorFlushDraw1Card); }
-    if bdfd2 { categories.push(HandCategory::BackdoorFlushDraw2Card); }
-    if bdsd { categories.push(HandCategory::BackdoorStraightDraw); }
-    
-    if !fd && !oesd && !gutshot && !bdfd1 && !bdfd2 && !bdsd && !overcard && made_hand == HandCategory::HighCard {
-        categories.push(HandCategory::Nothing);
+    if board.len() < 5 {
+        if fd {
+            categories.push(HandCategory::FlushDraw);
+            if board.len() == 4 {
+                let mut flop_cards = board[0..3].to_vec();
+                flop_cards.push(hole_cards.0);
+                flop_cards.push(hole_cards.1);
+                if has_flush_draw(&flop_cards) && !is_made_flush(&flop_cards) {
+                    categories.push(HandCategory::FlopFlushDraw);
+                } else {
+                    categories.push(HandCategory::TurnFlushDraw);
+                }
+            }
+        }
+        if oesd {
+            if oesd1 { categories.push(HandCategory::Oesd1Card); }
+            else { categories.push(HandCategory::Oesd2Card); }
+        }
+        if gutshot {
+            if gutshot1 { categories.push(HandCategory::Gutshot1Card); }
+            else { categories.push(HandCategory::Gutshot2Card); }
+        }
+        if overcard { categories.push(HandCategory::Overcard); }
+        
+        if oesd && fd { categories.push(HandCategory::OesdAndFd); }
+        if gutshot && fd { categories.push(HandCategory::GutshotAndFd); }
+        
+        let has_pair = matches!(made_hand, 
+            HandCategory::Overpair | 
+            HandCategory::TopPair | 
+            HandCategory::SecondPair | 
+            HandCategory::ThirdPair | 
+            HandCategory::IntermediatePair | 
+            HandCategory::Underpair | 
+            HandCategory::SmallPair |
+            HandCategory::TwoPairBothHoleCards | 
+            HandCategory::TwoPairOneHoleCard
+        );
+        if has_pair && (fd || oesd || gutshot) {
+            categories.push(HandCategory::ComboDraw);
+        }
+        
+        if bdfd1 { categories.push(HandCategory::BackdoorFlushDraw1Card); }
+        if bdfd2 { categories.push(HandCategory::BackdoorFlushDraw2Card); }
+        if bdsd { categories.push(HandCategory::BackdoorStraightDraw); }
+        
+        if !fd && !oesd && !gutshot && !bdfd1 && !bdfd2 && !bdsd && !overcard && made_hand == HandCategory::HighCard {
+            categories.push(HandCategory::Nothing);
+        }
+    } else {
+        if overcard {
+            categories.push(HandCategory::Overcard);
+        }
+
+        let turn_board = &board[0..4];
+        let turn_categories = categorize_hand(hole_cards, turn_board);
+        let had_draw_on_turn = turn_categories.iter().any(is_draw_category);
+        if had_draw_on_turn && !is_flush && !is_straight && made_hand == HandCategory::HighCard {
+            categories.push(HandCategory::MissDraw);
+        } else if !overcard && made_hand == HandCategory::HighCard {
+            categories.push(HandCategory::Nothing);
+        }
     }
     
     categories

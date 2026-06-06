@@ -3,6 +3,21 @@ import { CardSelector } from './components/CardSelector';
 import { RangeSelector, getComboCount } from './components/RangeSelector';
 import { CategoryFilter } from './components/CategoryFilter';
 import { CategoryResult } from './components/CategoryDetailModal';
+import { ActionTreeNavigator } from './components/ActionTreeNavigator';
+import {
+  StrategyNode,
+  streetToDb,
+  computePotAtStrategy,
+  parseActionAmountBb,
+  getParentForVillainActions,
+  getSelectedStrategyForStreet,
+  truncatePathForStreet,
+  formatVillainAction,
+  formatHeroAction,
+  getAllHeroNodesForStreet,
+  getVillainNodeForHero,
+} from './utils/strategyUtils';
+import { buildStrategyRange } from './utils/strategyRangeUtils';
 
 interface EquityResult {
   equity: number;
@@ -75,7 +90,7 @@ const PokerEquityCalculator: React.FC = () => {
   const [isBoardOpen, setIsBoardOpen] = useState(true);
 
   const [potSize, setPotSize] = useState<number>(0);
-  const [actionType, setActionType] = useState<'Check/Fold' | 'Call' | 'Bet/Raise'>('Call');
+  const [actionType, setActionType] = useState<'Check' | 'Check/Fold' | 'Call' | 'Bet/Raise'>('Call');
   const [actionAmount, setActionAmount] = useState<number>(0);
   const [foldEquity, setFoldEquity] = useState<number>(0);
 
@@ -86,12 +101,14 @@ const PokerEquityCalculator: React.FC = () => {
   const [postflopRangeGroups, setPostflopRangeGroups] = useState<Record<string, number>>({});
   const [postflopAllowedHands, setPostflopAllowedHands] = useState<string[]>([]);
 
-  const [allStrategies, setAllStrategies] = useState<any[]>([]);
+  const [allStrategies, setAllStrategies] = useState<StrategyNode[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
-  const [selectedFlopStrategyId, setSelectedFlopStrategyId] = useState<string>('');
+  const [strategyPath, setStrategyPath] = useState<number[]>([]);
+  const [pendingVillainNodeId, setPendingVillainNodeId] = useState<number | null>(null);
   
   const [baseCategories, setBaseCategories] = useState<CategoryResult[]>([]);
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
+  const [filterRevision, setFilterRevision] = useState(0);
   const [strategiesResults, setStrategiesResults] = useState<Record<string, { equity: number, ev: number, loading: boolean, error?: string }>>({});
 
   useEffect(() => {
@@ -109,22 +126,150 @@ const PokerEquityCalculator: React.FC = () => {
     fetchStrategies();
   }, []);
 
-  const preflopStrategies = useMemo(() => allStrategies.filter(s => s.street === 'PREFLOP'), [allStrategies]);
-  const flopStrategies = useMemo(() => {
-    if (!selectedStrategyId) return [];
-    return allStrategies.filter(s => s.street === 'FLOP' && s.parent_strategy_id?.toString() === selectedStrategyId);
-  }, [allStrategies, selectedStrategyId]);
-
-  // Determine current street based on board cards length
   const getCurrentStreet = (cards: string[]): Street => {
     if (cards.length < 3) return 'Preflop';
     if (cards.length === 3) return 'Flop';
     if (cards.length === 4) return 'Turn';
     return 'River';
   };
-  
+
   const currentStreet = getCurrentStreet(boardCards);
+  const currentStreetDb = streetToDb(currentStreet);
   const currentRange = ranges[currentStreet];
+
+  const preflopStrategies = useMemo(() => allStrategies.filter(s => s.street === 'PREFLOP'), [allStrategies]);
+
+  const applyStrategySettings = useCallback((strategy: StrategyNode) => {
+    const derivedPot = computePotAtStrategy(strategy, allStrategies);
+    if (derivedPot !== undefined) {
+      setPotSize(derivedPot);
+    } else if (strategy.pot_size_bb !== null && strategy.pot_size_bb !== undefined) {
+      setPotSize(strategy.pot_size_bb);
+    }
+
+    if (strategy.hero_action) {
+      if (strategy.hero_action === 'FOLD') {
+        setActionType('Check/Fold');
+      } else if (strategy.hero_action === 'CHECK') {
+        setActionType('Check');
+      } else if (strategy.hero_action === 'CALL') {
+        setActionType('Call');
+      } else if (strategy.hero_action === 'BET' || strategy.hero_action === 'RAISE') {
+        setActionType('Bet/Raise');
+      }
+    }
+
+    if (strategy.action_size) {
+      const pot = derivedPot ?? strategy.pot_size_bb ?? potSize;
+      const parsedAmount = parseActionAmountBb(strategy.action_size, pot);
+      if (parsedAmount !== null) {
+        setActionAmount(Number(parsedAmount.toFixed(1)));
+      }
+    }
+  }, [allStrategies, potSize]);
+
+  const selectedStreetStrategy = useMemo(
+    () => getSelectedStrategyForStreet(allStrategies, strategyPath, currentStreetDb),
+    [allStrategies, strategyPath, currentStreetDb]
+  );
+
+  const heroStrategiesAtStreet = useMemo(() => {
+    const parentId = getParentForVillainActions(
+      allStrategies,
+      strategyPath,
+      selectedStrategyId,
+      currentStreetDb
+    );
+    if (!parentId || currentStreet === 'Preflop') return [];
+    return getAllHeroNodesForStreet(allStrategies, parentId, currentStreetDb);
+  }, [allStrategies, strategyPath, selectedStrategyId, currentStreet, currentStreetDb]);
+
+  const handleSelectVillainAction = useCallback((strategy: StrategyNode) => {
+    setPendingVillainNodeId(strategy.id);
+    setStrategyPath(prev => prev.filter(id => {
+      const s = allStrategies.find(st => st.id === id);
+      return s?.street !== strategy.street;
+    }));
+  }, [allStrategies]);
+
+  const applyHeroStrategySelection = useCallback((strategy: StrategyNode) => {
+    applyStrategySettings(strategy);
+    setFilterRevision(r => r + 1);
+  }, [applyStrategySettings]);
+
+  const handleSelectHeroAction = useCallback((strategy: StrategyNode) => {
+    setStrategyPath(prev => {
+      const withoutSameStreet = prev.filter(id => {
+        const s = allStrategies.find(st => st.id === id);
+        return s?.street !== strategy.street;
+      });
+      return [...withoutSameStreet, strategy.id];
+    });
+    setPendingVillainNodeId(strategy.parent_strategy_id);
+    applyHeroStrategySelection(strategy);
+  }, [allStrategies, applyHeroStrategySelection]);
+
+  const handleSelectLine = useCallback((villain: StrategyNode, hero: StrategyNode) => {
+    setPendingVillainNodeId(villain.id);
+    setStrategyPath(prev => {
+      const withoutSameStreet = prev.filter(id => {
+        const s = allStrategies.find(st => st.id === id);
+        return s?.street !== hero.street;
+      });
+      return [...withoutSameStreet, hero.id];
+    });
+    applyHeroStrategySelection(hero);
+  }, [allStrategies, applyHeroStrategySelection]);
+
+  const handleGoBack = useCallback(() => {
+    const selectedHero = getSelectedStrategyForStreet(allStrategies, strategyPath, currentStreetDb);
+    if (selectedHero) {
+      setStrategyPath(prev => prev.filter(id => id !== selectedHero.id));
+      const villain = getVillainNodeForHero(allStrategies, selectedHero);
+      setPendingVillainNodeId(villain?.id ?? null);
+      return;
+    }
+    if (pendingVillainNodeId) {
+      setPendingVillainNodeId(null);
+      return;
+    }
+    setStrategyPath(prev => {
+      const next = [...prev];
+      next.pop();
+      const last = next.length > 0 ? allStrategies.find(s => s.id === next[next.length - 1]) : undefined;
+      if (last) {
+        applyStrategySettings(last);
+        setPendingVillainNodeId(last.parent_strategy_id);
+      } else if (selectedStrategyId) {
+        const preflop = allStrategies.find(s => s.id.toString() === selectedStrategyId);
+        if (preflop) applyStrategySettings(preflop);
+        setPendingVillainNodeId(null);
+      }
+      return next;
+    });
+  }, [allStrategies, strategyPath, currentStreetDb, pendingVillainNodeId, selectedStrategyId, applyStrategySettings]);
+
+  useEffect(() => {
+    setStrategyPath([]);
+    setPendingVillainNodeId(null);
+  }, [selectedStrategyId]);
+
+  useEffect(() => {
+    setBaseCategories([]);
+    setActiveCategories({});
+    setStrategyPath(prev => {
+      const truncated = truncatePathForStreet(allStrategies, prev, currentStreetDb);
+      const hero = getSelectedStrategyForStreet(allStrategies, truncated, currentStreetDb);
+      if (hero) {
+        const villain = getVillainNodeForHero(allStrategies, hero);
+        setPendingVillainNodeId(villain?.id ?? hero.parent_strategy_id ?? null);
+      } else {
+        setPendingVillainNodeId(null);
+      }
+      return truncated;
+    });
+    setFilterRevision(r => r + 1);
+  }, [currentStreetDb, allStrategies]);
 
   const rangeToString = (range: Record<string, number>) =>
     Object.entries(range)
@@ -136,61 +281,26 @@ const PokerEquityCalculator: React.FC = () => {
     strategyData: any,
     baseCats: CategoryResult[],
     activeCats: Record<string, boolean>,
-  ): Record<string, number> => {
-    if (!strategyData || baseCats.length === 0) return {};
-
-    let parsedStrategy: Record<string, number>;
-    if (typeof strategyData === 'string') {
-      try {
-        parsedStrategy = JSON.parse(strategyData);
-      } catch {
-        return {};
-      }
-    } else {
-      parsedStrategy = strategyData;
-    }
-
-    const newRange: Record<string, number> = {};
-    baseCats.forEach(cat => {
-      if (activeCats[cat.category] === false) return;
-
-      let strategyWeight = parsedStrategy[cat.category];
-      if (strategyWeight === undefined && (cat.category === 'BackdoorFlushDraw1Card' || cat.category === 'BackdoorFlushDraw2Card')) {
-        strategyWeight = parsedStrategy['BackdoorFlushDraw'];
-      }
-      if (typeof strategyWeight === 'string') {
-         strategyWeight = parseInt(strategyWeight, 10);
-      }
-      if (strategyWeight !== undefined && !isNaN(strategyWeight)) {
-        const targetCount = Math.round(cat.hands.length * (strategyWeight / 100));
-        cat.hands.forEach((h, idx) => {
-          const weight = idx < targetCount ? h.weight : 0;
-          if (weight > 0) {
-            newRange[h.hand] = Math.max(newRange[h.hand] || 0, weight);
-          }
-        });
-      } else {
-        // If no strategy weight, assume 100% of base weight
-        cat.hands.forEach(h => {
-          if (h.weight > 0) {
-            newRange[h.hand] = Math.max(newRange[h.hand] || 0, h.weight);
-          }
-        });
-      }
-    });
-
-    return newRange;
-  };
+    boardLength: number,
+  ): Record<string, number> => buildStrategyRange(strategyData, baseCats, activeCats, boardLength);
 
   // Calculate EV helper
   const calculateEV = (eq: number, action: string, pot: number, amount: number, fe: number) => {
-    if (action === 'Check/Fold' || action === 'FOLD' || action === 'CHECK') return 0;
+    if (action === 'Check/Fold' || action === 'FOLD') return 0;
+    if (action === 'Check' || action === 'CHECK') return eq * pot;
     if (action === 'Call' || action === 'CALL') return (eq * pot) - ((1 - eq) * amount);
     if (action === 'Bet/Raise' || action === 'BET' || action === 'RAISE') {
       const fePct = fe / 100;
       return (fePct * pot) + ((1 - fePct) * ((eq * (pot + amount)) - ((1 - eq) * amount)));
     }
     return 0;
+  };
+
+  // FE suffisante pour un profit direct (bluff rentable même avec 0% d'équité si call)
+  const hasDirectProfit = (fe: number, pot: number, amount: number) => {
+    if (pot <= 0 || amount <= 0) return false;
+    const minFe = (amount / (pot + amount)) * 100;
+    return fe >= minFe;
   };
 
   const opponentCombos = useMemo(() => {
@@ -204,12 +314,14 @@ const PokerEquityCalculator: React.FC = () => {
     return total;
   }, [currentRange, playerCards, boardCards]);
 
-  const getBaseRangeForCurrentStreet = () => {
+  const baseRangeForCurrentStreet = useMemo(() => {
     if (currentStreet === 'Flop') return ranges.Preflop;
     if (currentStreet === 'Turn') return ranges.Flop;
     if (currentStreet === 'River') return ranges.Turn;
     return {};
-  };
+  }, [currentStreet, ranges.Preflop, ranges.Flop, ranges.Turn]);
+
+  const getBaseRangeForCurrentStreet = () => baseRangeForCurrentStreet;
 
   const baseCombos = useMemo(() => {
     let total = 0;
@@ -228,21 +340,21 @@ const PokerEquityCalculator: React.FC = () => {
     let isActive = true;
 
     const calculateAllStrategies = async () => {
-      if (currentStreet !== 'Flop' || flopStrategies.length === 0 || playerCards.length !== 2 || baseCategories.length === 0 || Object.keys(activeCategories).length === 0) {
+      if (currentStreet === 'Preflop' || heroStrategiesAtStreet.length === 0 || playerCards.length !== 2 || baseCategories.length === 0 || Object.keys(activeCategories).length === 0) {
         setStrategiesResults({});
         return;
       }
 
       const newResults: Record<string, any> = {};
-      flopStrategies.forEach(s => {
+      heroStrategiesAtStreet.forEach(s => {
         newResults[s.id] = { loading: true };
       });
       setStrategiesResults(newResults);
 
-      for (const strategy of flopStrategies) {
+      for (const strategy of heroStrategiesAtStreet) {
         if (!isActive) break;
         
-        const strategyRangeObj = getStrategyRange(strategy.strategy_data, baseCategories, activeCategories);
+        const strategyRangeObj = getStrategyRange(strategy.strategy_data, baseCategories, activeCategories, boardCards.length);
         const strategyRangeStr = rangeToString(strategyRangeObj);
         if (!strategyRangeStr) {
           setStrategiesResults(prev => ({ ...prev, [strategy.id]: { loading: false, error: 'Range vide' } }));
@@ -266,19 +378,9 @@ const PokerEquityCalculator: React.FC = () => {
 
           if (!response.ok) throw new Error(data.error || 'Erreur');
 
-          // Calculate EV for this strategy
-          let pot = strategy.pot_size_bb || potSize || 0;
-          let action = strategy.hero_action || 'Call';
-          let amount = 0;
-          if (strategy.action_size) {
-            let parsedAmount = parseFloat(strategy.action_size);
-            if (!isNaN(parsedAmount)) {
-              if (strategy.action_size.includes('%') && pot) {
-                parsedAmount = (parsedAmount / 100) * pot;
-              }
-              amount = parsedAmount;
-            }
-          }
+          const pot = computePotAtStrategy(strategy, allStrategies) ?? strategy.pot_size_bb ?? potSize ?? 0;
+          const action = strategy.hero_action || 'Call';
+          const amount = parseActionAmountBb(strategy.action_size, pot) ?? 0;
           
           // Estimate fold equity based on combos
           let strategyCombos = 0;
@@ -322,7 +424,7 @@ const PokerEquityCalculator: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [currentStreet, flopStrategies, playerCards, boardCards, baseCategories, activeCategories, potSize, baseCombos]);
+  }, [currentStreet, heroStrategiesAtStreet, playerCards, boardCards, baseCategories, activeCategories, potSize, baseCombos, allStrategies]);
 
   useEffect(() => {
     if (currentStreet !== 'Preflop' && baseCombos > 0) {
@@ -572,16 +674,18 @@ const PokerEquityCalculator: React.FC = () => {
                           dataToImport = JSON.parse(dataToImport);
                         } catch (err) {}
                       }
-                      if (typeof dataToImport === 'object') {
-                        handleRangeChange(dataToImport);
+                      if (typeof dataToImport === 'object' && dataToImport !== null && !Array.isArray(dataToImport)) {
+                        handleRangeChange(dataToImport as Record<string, number>);
                       }
                     }
                     if (strategy.pot_size_bb !== null && strategy.pot_size_bb !== undefined) {
                       setPotSize(strategy.pot_size_bb);
                     }
                     if (strategy.hero_action) {
-                      if (strategy.hero_action === 'FOLD' || strategy.hero_action === 'CHECK') {
+                      if (strategy.hero_action === 'FOLD') {
                         setActionType('Check/Fold');
+                      } else if (strategy.hero_action === 'CHECK') {
+                        setActionType('Check');
                       } else if (strategy.hero_action === 'CALL') {
                         setActionType('Call');
                       } else if (strategy.hero_action === 'BET' || strategy.hero_action === 'RAISE') {
@@ -645,67 +749,36 @@ const PokerEquityCalculator: React.FC = () => {
         <h2 style={{ fontSize: '18px', marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Filtres</h2>
         {currentStreet !== 'Preflop' ? (
           <>
-            {currentStreet === 'Flop' && flopStrategies.length > 0 && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold' }}>
-                  Importer une stratégie Flop (Réaction) :
-                </label>
-                <select
-                  value={selectedFlopStrategyId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedFlopStrategyId(id);
-                    if (id) {
-                      const strategy = flopStrategies.find(s => s.id.toString() === id);
-                      if (strategy) {
-                        if (strategy.pot_size_bb !== null && strategy.pot_size_bb !== undefined) {
-                          setPotSize(strategy.pot_size_bb);
-                        }
-                        if (strategy.hero_action) {
-                          if (strategy.hero_action === 'FOLD' || strategy.hero_action === 'CHECK') {
-                            setActionType('Check/Fold');
-                          } else if (strategy.hero_action === 'CALL') {
-                            setActionType('Call');
-                          } else if (strategy.hero_action === 'BET' || strategy.hero_action === 'RAISE') {
-                            setActionType('Bet/Raise');
-                          }
-                        }
-                        if (strategy.action_size) {
-                          let parsedAmount = parseFloat(strategy.action_size);
-                          if (!isNaN(parsedAmount)) {
-                            if (strategy.action_size.includes('%') && strategy.pot_size_bb) {
-                              parsedAmount = (parsedAmount / 100) * strategy.pot_size_bb;
-                            }
-                            setActionAmount(Number(parsedAmount.toFixed(1)));
-                          }
-                        }
-                      }
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    borderRadius: '4px',
-                    border: '1px solid #bdc3c7',
-                    backgroundColor: 'white',
-                  }}
-                >
-                  <option value="">-- Sélectionner une stratégie Flop --</option>
-                  {flopStrategies.map(s => (
-                    <option key={s.id} value={s.id}>{s.title || `Stratégie #${s.id}`}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <CategoryFilter 
-              baseRange={getBaseRangeForCurrentStreet()}
+            <ActionTreeNavigator
+              allStrategies={allStrategies}
+              strategyPath={strategyPath}
+              selectedPreflopId={selectedStrategyId}
+              currentStreetDb={currentStreetDb}
+              pendingVillainNodeId={pendingVillainNodeId}
+              onSelectVillain={handleSelectVillainAction}
+              onSelectHero={handleSelectHeroAction}
+              onGoBack={handleGoBack}
+              onResetPath={() => {
+                setStrategyPath([]);
+                setPendingVillainNodeId(null);
+                if (selectedStrategyId) {
+                  const preflop = allStrategies.find(s => s.id.toString() === selectedStrategyId);
+                  if (preflop) applyStrategySettings(preflop);
+                }
+              }}
+            />
+            <CategoryFilter
+              key={currentStreetDb}
+              baseRange={baseRangeForCurrentStreet}
               board={boardCards}
               onChange={handleRangeChange}
               onRangeGroupsChange={handleRangeGroupsChange}
               onBaseCategoriesChange={setBaseCategories}
               onActiveCategoriesChange={handleActiveCategoriesChange}
               deadCards={[...playerCards, ...boardCards]}
-              strategyData={selectedFlopStrategyId ? allStrategies.find(s => s.id.toString() === selectedFlopStrategyId)?.strategy_data : undefined}
+              strategyId={selectedStreetStrategy?.id}
+              strategyData={selectedStreetStrategy?.strategy_data as Record<string, number> | undefined}
+              filterRevision={filterRevision}
             />
           </>
         ) : (
@@ -740,13 +813,14 @@ const PokerEquityCalculator: React.FC = () => {
                   onChange={(e) => setActionType(e.target.value as any)}
                   style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px', backgroundColor: 'white' }}
                 >
-                  <option value="Check/Fold">Check / Fold</option>
+                  <option value="Check">Check</option>
+                  <option value="Check/Fold">Fold</option>
                   <option value="Call">Call</option>
                   <option value="Bet/Raise">Bet / Raise</option>
                 </select>
               </div>
 
-              {actionType !== 'Check/Fold' && (
+              {actionType !== 'Check/Fold' && actionType !== 'Check' && (
                 <div>
                   <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>
                     Montant ({actionType === 'Call' ? 'à payer' : 'de la mise'})
@@ -761,27 +835,37 @@ const PokerEquityCalculator: React.FC = () => {
                 </div>
               )}
 
-              {actionType === 'Bet/Raise' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold', margin: 0 }}>
-                      Fold Equity (%)
-                    </label>
-                    {currentStreet !== 'Preflop' && baseCombos > 0 && (
-                      <span style={{ fontSize: '11px', color: '#3498db' }}>
-                        Auto-calculé via le filtre
-                      </span>
-                    )}
+              {actionType === 'Bet/Raise' && (() => {
+                const feDirectProfit = hasDirectProfit(foldEquity, potSize, actionAmount);
+                return (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold', margin: 0 }}>
+                        Fold Equity (%)
+                      </label>
+                      {currentStreet !== 'Preflop' && baseCombos > 0 && (
+                        <span style={{ fontSize: '11px', color: '#3498db' }}>
+                          Auto-calculé via le filtre
+                        </span>
+                      )}
+                    </div>
+                    <input 
+                      type="number" 
+                      value={foldEquity === 0 && baseCombos === 0 ? '' : foldEquity} 
+                      onChange={(e) => setFoldEquity(Number(e.target.value))}
+                      placeholder="Ex: 30"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${feDirectProfit ? '#27ae60' : '#bdc3c7'}`,
+                        fontSize: '14px',
+                        backgroundColor: feDirectProfit ? '#e8f8f5' : 'white',
+                      }}
+                    />
                   </div>
-                  <input 
-                    type="number" 
-                    value={foldEquity === 0 && baseCombos === 0 ? '' : foldEquity} 
-                    onChange={(e) => setFoldEquity(Number(e.target.value))}
-                    placeholder="Ex: 30"
-                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
-                  />
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
@@ -822,6 +906,8 @@ const PokerEquityCalculator: React.FC = () => {
                 
                 if (actionType === 'Check/Fold') {
                   ev = 0;
+                } else if (actionType === 'Check') {
+                  ev = eq * potSize;
                 } else if (actionType === 'Call') {
                   ev = (eq * potSize) - ((1 - eq) * actionAmount);
                 } else if (actionType === 'Bet/Raise') {
@@ -836,6 +922,7 @@ const PokerEquityCalculator: React.FC = () => {
                     </h3>
                     <div style={{ fontSize: '13px', color: '#7f8c8d', textAlign: 'center' }}>
                       {actionType === 'Check/Fold' && "L'EV d'un fold est toujours de 0."}
+                      {actionType === 'Check' && `Basé sur un pot de ${potSize} (réalisation de l'équité au showdown).`}
                       {actionType === 'Call' && `Basé sur un pot de ${potSize} et un call de ${actionAmount}.`}
                       {actionType === 'Bet/Raise' && `Basé sur un pot de ${potSize}, une mise de ${actionAmount} et ${foldEquity}% de fold equity.`}
                     </div>
@@ -869,16 +956,34 @@ const PokerEquityCalculator: React.FC = () => {
           )}
 
           {/* All Strategies Results */}
-          {currentStreet === 'Flop' && flopStrategies.length > 0 && playerCards.length === 2 && (
+          {currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0 && playerCards.length === 2 && (
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Toutes les stratégies (Flop)</h3>
+              <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Toutes les lignes ({currentStreet})</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {flopStrategies.map(strategy => {
+                {heroStrategiesAtStreet.map(strategy => {
                   const res = strategiesResults[strategy.id];
+                  const villain = getVillainNodeForHero(allStrategies, strategy);
+                  const isSelected = selectedStreetStrategy?.id === strategy.id;
                   return (
-                    <div key={strategy.id} style={{ padding: '10px', borderRadius: '6px', border: '1px solid #ecf0f1', backgroundColor: '#f8f9fa' }}>
+                    <div
+                      key={strategy.id}
+                      onClick={() => {
+                        if (villain) {
+                          handleSelectLine(villain, strategy);
+                        } else {
+                          handleSelectHeroAction(strategy);
+                        }
+                      }}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isSelected ? '#27ae60' : '#ecf0f1'}`,
+                        backgroundColor: isSelected ? '#e8f8f5' : '#f8f9fa',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <div style={{ fontWeight: 'bold', color: '#2c3e50', marginBottom: '5px' }}>
-                        {strategy.title || `Stratégie #${strategy.id}`}
+                        {villain ? `${formatVillainAction(villain)} → ` : ''}{formatHeroAction(strategy)}
                       </div>
                       {res?.loading ? (
                         <div style={{ fontSize: '13px', color: '#7f8c8d' }}>Calcul en cours...</div>

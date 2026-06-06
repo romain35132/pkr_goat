@@ -1,6 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Plus, Edit2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { RangeSelector } from '../RangeSelector';
+import {
+  derivePotFromParent,
+  computePotAtStrategy,
+  buildAncestorChainSignature,
+} from '../../utils/strategyUtils';
 
 const categoryNames: Record<string, string> = {
   'StraightFlush': 'Quinte Flush',
@@ -19,12 +24,15 @@ const categoryNames: Record<string, string> = {
   'IntermediatePair': 'Paire Intermédiaire',
   'Underpair': 'Underpair',
   'SmallPair': 'Petite Paire',
-  'OnePair': 'Paire',
+  'PairWithTurnCard': 'Paire avec la carte de la turn',
+  'PairWithRiverCard': 'Paire avec la carte de la river',
   'HighCard': 'Hauteur',
   'Overcard': 'Overcard',
   'Oesd2Card': 'OESD (2card)',
   'Oesd1Card': 'OESD (1card)',
   'FlushDraw': 'Flushdraw',
+  'TurnFlushDraw': 'Flush draw de la turn',
+  'FlopFlushDraw': 'Flush draw du flop',
   'Gutshot2Card': 'Gutshot (2card)',
   'Gutshot1Card': 'Gutshot (1card)',
   'ComboDraw': 'Combo draw',
@@ -33,6 +41,7 @@ const categoryNames: Record<string, string> = {
   'BackdoorFlushDraw1Card': '1 card backdoor flushdraw',
   'BackdoorFlushDraw2Card': '2 card backdoor flushdraw',
   'BackdoorStraightDraw': 'Backdoor quinte',
+  'MissDraw': 'Miss draw',
   'Nothing': 'Nothing'
 };
 
@@ -40,8 +49,41 @@ const madeHandsSet = new Set([
   'StraightFlush', 'FourOfAKind', 'FullHouse', 'Flush', 'Straight', 
   'Set', 'Trips', 'TwoPairBothHoleCards', 'TwoPairOneHoleCard', 
   'Overpair', 'TopPair', 'SecondPair', 'ThirdPair', 'IntermediatePair', 'Underpair', 'SmallPair',
-  'OnePair'
+  'PairWithTurnCard', 'PairWithRiverCard'
 ]);
+
+const TURN_ONLY_CATEGORIES = new Set(['TurnFlushDraw', 'FlopFlushDraw']);
+const BACKDOOR_FLUSH_CATEGORIES = new Set(['BackdoorFlushDraw1Card', 'BackdoorFlushDraw2Card']);
+const RIVER_HIDDEN_DRAW_CATEGORIES = new Set([
+  'FlushDraw', 'Oesd1Card', 'Oesd2Card', 'Gutshot1Card', 'Gutshot2Card',
+  'ComboDraw', 'OesdAndFd', 'GutshotAndFd',
+]);
+
+const isCategoryVisibleForStreet = (cat: string, street: string): boolean => {
+  if (cat === 'MissDraw') return street === 'RIVER';
+  if (TURN_ONLY_CATEGORIES.has(cat)) return street === 'TURN';
+  if (BACKDOOR_FLUSH_CATEGORIES.has(cat)) return street === 'FLOP';
+  if (cat === 'BackdoorStraightDraw') return street === 'FLOP';
+  if (RIVER_HIDDEN_DRAW_CATEGORIES.has(cat)) return street !== 'RIVER';
+  if (cat === 'PairWithTurnCard') return street === 'TURN' || street === 'RIVER';
+  if (cat === 'PairWithRiverCard') return street === 'RIVER';
+  return true;
+};
+
+const PERCENTAGE_OPTIONS = Array.from({ length: 21 }, (_, i) => i * 5);
+
+const createDefaultPostflopStrategyData = (): Record<string, number> => {
+  const data: Record<string, number> = {};
+  Object.keys(categoryNames).forEach(cat => {
+    data[cat] = 100;
+  });
+  return data;
+};
+
+const getMadeHandCategories = (street: string) =>
+  Object.keys(categoryNames).filter(k => madeHandsSet.has(k) && isCategoryVisibleForStreet(k, street));
+const getOtherHandCategories = (street: string) =>
+  Object.keys(categoryNames).filter(k => !madeHandsSet.has(k) && isCategoryVisibleForStreet(k, street));
 
 interface Profile {
   id: number;
@@ -112,6 +154,10 @@ const Strategies: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [currentStrategy, setCurrentStrategy] = useState<Partial<Strategy>>({});
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [bulkPercentage, setBulkPercentage] = useState(100);
+  const [madeHandsExpanded, setMadeHandsExpanded] = useState(true);
+  const [otherHandsExpanded, setOtherHandsExpanded] = useState(true);
 
   const getStrategyValue = (cat: string, data: any) => {
     if (!data) return 0;
@@ -123,9 +169,152 @@ const Strategies: React.FC = () => {
     return 0;
   };
 
+  const resetBulkSelection = () => {
+    setSelectedCategories(new Set());
+    setBulkPercentage(100);
+    setMadeHandsExpanded(true);
+    setOtherHandsExpanded(true);
+  };
+
+  const toggleCategorySelection = (cat: string) => {
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) {
+        next.delete(cat);
+      } else {
+        next.add(cat);
+      }
+      return next;
+    });
+  };
+
+  const selectCategoryGroup = (categories: string[]) => {
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      categories.forEach(cat => next.add(cat));
+      return next;
+    });
+  };
+
+  const deselectAllCategories = () => {
+    setSelectedCategories(new Set());
+  };
+
+  const handleApplyBulkPercentage = () => {
+    if (selectedCategories.size === 0) return;
+    const newData = { ...(currentStrategy.strategy_data || {}) };
+    selectedCategories.forEach(cat => {
+      newData[cat] = bulkPercentage;
+    });
+    setCurrentStrategy({ ...currentStrategy, strategy_data: newData });
+  };
+
+  const updateCategoryPercentage = (cat: string, value: number) => {
+    const newData = { ...(currentStrategy.strategy_data || {}) };
+    newData[cat] = value;
+    setCurrentStrategy({ ...currentStrategy, strategy_data: newData });
+  };
+
+  const renderCollapsibleSection = (
+    title: string,
+    categories: string[],
+    expanded: boolean,
+    onToggle: () => void
+  ) => (
+    <div className="border border-gray-200 rounded-md overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 font-bold text-gray-800 hover:text-blue-700"
+        >
+          {expanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+          {title}
+          <span className="text-xs font-normal text-gray-500">({categories.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => selectCategoryGroup(categories)}
+          className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100"
+        >
+          Tout sélectionner
+        </button>
+      </div>
+      {expanded && (
+        <div className="p-3">
+          {renderCategoryGrid(categories)}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderCategoryGrid = (categories: string[]) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {categories.map(cat => (
+        <div key={cat} className="flex items-center gap-2 p-2 rounded-md border border-gray-100 hover:bg-gray-50">
+          <input
+            type="checkbox"
+            checked={selectedCategories.has(cat)}
+            onChange={() => toggleCategorySelection(cat)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0"
+            title="Sélectionner pour appliquer le pourcentage générique"
+          />
+          <div className="flex flex-col flex-1 min-w-0 space-y-1">
+            <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>
+              {categoryNames[cat]}
+            </label>
+            <select
+              value={getStrategyValue(cat, currentStrategy.strategy_data)}
+              onChange={(e) => updateCategoryPercentage(cat, parseInt(e.target.value))}
+              className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm w-full"
+            >
+              {PERCENTAGE_OPTIONS.map(p => (
+                <option key={p} value={p}>{p}%</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const getStrategiesForPotDerivation = useCallback((): Strategy[] => {
+    if (!isEditing || !currentStrategy.id) return strategies;
+    return strategies.map(s =>
+      s.id === currentStrategy.id
+        ? { ...s, ...currentStrategy, strategy_data: currentStrategy.strategy_data ?? s.strategy_data } as Strategy
+        : s
+    );
+  }, [
+    strategies,
+    isEditing,
+    currentStrategy.id,
+    currentStrategy.hero_action,
+    currentStrategy.action_size,
+    currentStrategy.pot_size_bb,
+    currentStrategy.parent_strategy_id,
+  ]);
+
+  const parentChainSignature = useMemo(
+    () => buildAncestorChainSignature(currentStrategy.parent_strategy_id, strategies),
+    [currentStrategy.parent_strategy_id, strategies]
+  );
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!isEditing || !currentStrategy.parent_strategy_id || strategies.length === 0) return;
+
+    const derivedPot = derivePotFromParent(currentStrategy.parent_strategy_id, strategies);
+    if (derivedPot === undefined) return;
+
+    setCurrentStrategy(prev => {
+      if (prev.pot_size_bb === derivedPot) return prev;
+      return { ...prev, pot_size_bb: derivedPot };
+    });
+  }, [isEditing, currentStrategy.parent_strategy_id, parentChainSignature, strategies]);
 
   const fetchData = async () => {
     try {
@@ -185,9 +374,12 @@ const Strategies: React.FC = () => {
 
       // Toujours sauvegarder toutes les catégories (même à zéro) pour le postflop
       if (currentStrategy.street !== 'PREFLOP') {
-        Object.keys(categoryNames).forEach(cat => {
-          strategyDataObj[cat] = getStrategyValue(cat, strategyDataObj);
-        });
+        const street = currentStrategy.street || 'FLOP';
+        Object.keys(categoryNames)
+          .filter(cat => isCategoryVisibleForStreet(cat, street))
+          .forEach(cat => {
+            strategyDataObj[cat] = getStrategyValue(cat, strategyDataObj);
+          });
       }
 
       const isPreflop = currentStrategy.street === 'PREFLOP';
@@ -214,10 +406,26 @@ const Strategies: React.FC = () => {
       
       setIsEditing(false);
       setCurrentStrategy({});
+      resetBulkSelection();
       fetchStrategies();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
+  };
+
+  const handleCreateChildStrategy = (parentStrategy: Strategy) => {
+    const strategiesForDerivation = getStrategiesForPotDerivation();
+    const derivedPot = derivePotFromParent(parentStrategy.id, strategiesForDerivation);
+    const isPreflop = parentStrategy.street === 'PREFLOP';
+    resetBulkSelection();
+    setIsEditing(true);
+    setCurrentStrategy({
+      parent_strategy_id: parentStrategy.id,
+      profile_id: parentStrategy.profile_id,
+      street: parentStrategy.street,
+      ...(derivedPot !== undefined ? { pot_size_bb: derivedPot } : {}),
+      strategy_data: isPreflop ? {} : createDefaultPostflopStrategyData(),
+    });
   };
 
   const handleDelete = async (id: number) => {
@@ -248,7 +456,11 @@ const Strategies: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Gestion des Stratégies</h2>
         <button
-          onClick={() => { setIsEditing(true); setCurrentStrategy({ street: 'PREFLOP', strategy_data: {} }); }}
+          onClick={() => {
+            resetBulkSelection();
+            setIsEditing(true);
+            setCurrentStrategy({ street: 'PREFLOP', strategy_data: {} });
+          }}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -295,11 +507,17 @@ const Strategies: React.FC = () => {
                 value={currentStrategy.street || 'PREFLOP'}
                 onChange={e => {
                   const street = e.target.value;
+                  const isPreflop = street === 'PREFLOP';
+                  let strategy_data = currentStrategy.strategy_data;
+                  if (!currentStrategy.id) {
+                    strategy_data = isPreflop ? {} : createDefaultPostflopStrategyData();
+                  }
                   setCurrentStrategy({
                     ...currentStrategy,
                     street,
-                    position_relative: street === 'PREFLOP' ? undefined : currentStrategy.position_relative,
-                    position_preflop: street !== 'PREFLOP' ? undefined : currentStrategy.position_preflop,
+                    strategy_data,
+                    position_relative: isPreflop ? undefined : currentStrategy.position_relative,
+                    position_preflop: !isPreflop ? undefined : currentStrategy.position_preflop,
                   });
                 }}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
@@ -314,7 +532,17 @@ const Strategies: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700">Stratégie Parente (Optionnel)</label>
               <select
                 value={currentStrategy.parent_strategy_id || ''}
-                onChange={e => setCurrentStrategy({...currentStrategy, parent_strategy_id: e.target.value ? parseInt(e.target.value) : null})}
+                onChange={e => {
+                  const parentId = e.target.value ? parseInt(e.target.value) : null;
+                  setCurrentStrategy(prev => {
+                    const derivedPot = derivePotFromParent(parentId, strategies);
+                    return {
+                      ...prev,
+                      parent_strategy_id: parentId,
+                      ...(derivedPot !== undefined ? { pot_size_bb: derivedPot } : {}),
+                    };
+                  });
+                }}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
               >
                 <option value="">Aucune</option>
@@ -418,56 +646,51 @@ const Strategies: React.FC = () => {
                 </div>
               ) : (
                 <div className="border rounded-md p-4 bg-white space-y-6">
-                  <div>
-                    <h4 className="font-bold text-gray-800 mb-3 border-b pb-1">Mains faites (pair+)</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                      {Object.keys(categoryNames).filter(k => madeHandsSet.has(k)).map(cat => (
-                        <div key={cat} className="flex flex-col space-y-1">
-                          <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
-                          <select
-                            value={getStrategyValue(cat, currentStrategy.strategy_data)}
-                            onChange={(e) => {
-                              const newData = { ...(currentStrategy.strategy_data || {}) };
-                              newData[cat] = parseInt(e.target.value);
-                              setCurrentStrategy({...currentStrategy, strategy_data: newData});
-                            }}
-                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm"
-                          >
-                            <option value={100}>100%</option>
-                            <option value={75}>75%</option>
-                            <option value={50}>50%</option>
-                            <option value={25}>25%</option>
-                            <option value={0}>0%</option>
-                          </select>
-                        </div>
+                  <div className="flex flex-wrap items-center gap-3 p-3 bg-blue-50 rounded-md border border-blue-100">
+                    <span className="text-sm font-medium text-gray-700">Pourcentage générique :</span>
+                    <select
+                      value={bulkPercentage}
+                      onChange={(e) => setBulkPercentage(parseInt(e.target.value))}
+                      className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1.5 border bg-white text-sm"
+                    >
+                      {PERCENTAGE_OPTIONS.map(p => (
+                        <option key={p} value={p}>{p}%</option>
                       ))}
-                    </div>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkPercentage}
+                      disabled={selectedCategories.size === 0}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Appliquer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deselectAllCategories}
+                      disabled={selectedCategories.size === 0}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Tout déselectionner
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      {selectedCategories.size > 0
+                        ? `${selectedCategories.size} catégorie(s) sélectionnée(s)`
+                        : 'Cochez des catégories pour appliquer en masse'}
+                    </span>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-gray-800 mb-3 border-b pb-1">Le reste</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                      {Object.keys(categoryNames).filter(k => !madeHandsSet.has(k)).map(cat => (
-                        <div key={cat} className="flex flex-col space-y-1">
-                          <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>{categoryNames[cat]}</label>
-                          <select
-                            value={getStrategyValue(cat, currentStrategy.strategy_data)}
-                            onChange={(e) => {
-                              const newData = { ...(currentStrategy.strategy_data || {}) };
-                              newData[cat] = parseInt(e.target.value);
-                              setCurrentStrategy({...currentStrategy, strategy_data: newData});
-                            }}
-                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm"
-                          >
-                            <option value={100}>100%</option>
-                            <option value={75}>75%</option>
-                            <option value={50}>50%</option>
-                            <option value={25}>25%</option>
-                            <option value={0}>0%</option>
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  {renderCollapsibleSection(
+                    'Mains faites (pair+)',
+                    getMadeHandCategories(currentStrategy.street || 'FLOP'),
+                    madeHandsExpanded,
+                    () => setMadeHandsExpanded(prev => !prev)
+                  )}
+                  {renderCollapsibleSection(
+                    'Le reste',
+                    getOtherHandCategories(currentStrategy.street || 'FLOP'),
+                    otherHandsExpanded,
+                    () => setOtherHandsExpanded(prev => !prev)
+                  )}
                 </div>
               )}
             </div>
@@ -475,7 +698,7 @@ const Strategies: React.FC = () => {
           <div className="flex justify-end space-x-3 mt-4">
             <button
               type="button"
-              onClick={() => setIsEditing(false)}
+              onClick={() => { setIsEditing(false); resetBulkSelection(); }}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
               Annuler
@@ -498,7 +721,7 @@ const Strategies: React.FC = () => {
               <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
               <th className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Street</th>
               <th className="w-[33%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contexte</th>
-              <th className="w-[10%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="w-[18%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -528,9 +751,12 @@ const Strategies: React.FC = () => {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {strategy.pot_size_bb !== undefined && strategy.pot_size_bb !== null && (
-                    <div className="mb-1">Pot: <span className="font-medium">{strategy.pot_size_bb} bb</span></div>
-                  )}
+                  {(() => {
+                    const displayPot = computePotAtStrategy(strategy, strategies) ?? strategy.pot_size_bb;
+                    return displayPot != null ? (
+                      <div className="mb-1">Pot: <span className="font-medium">{displayPot} bb</span></div>
+                    ) : null;
+                  })()}
                   {strategy.hero_action && (
                     <div>
                       Action Hero: <span className="font-medium">{strategy.hero_action}</span>
@@ -554,25 +780,39 @@ const Strategies: React.FC = () => {
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => { 
-                      let parsedData = strategy.strategy_data;
-                      if (typeof parsedData === 'string') {
-                        try { parsedData = JSON.parse(parsedData); } catch(e) { parsedData = {}; }
-                      }
-                      setIsEditing(true); 
-                      setCurrentStrategy({...strategy, strategy_data: parsedData}); 
-                    }}
-                    className="text-indigo-600 hover:text-indigo-900 mr-4"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(strategy.id)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCreateChildStrategy(strategy)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md hover:bg-green-100"
+                      title={`Créer une stratégie enfant de ${strategy.title || `Stratégie #${strategy.id}`}`}
+                    >
+                      <Plus className="w-3 h-3" />
+                      Créer sous nœud
+                    </button>
+                    <button
+                      onClick={() => { 
+                        let parsedData = strategy.strategy_data;
+                        if (typeof parsedData === 'string') {
+                          try { parsedData = JSON.parse(parsedData); } catch(e) { parsedData = {}; }
+                        }
+                        resetBulkSelection();
+                        setIsEditing(true); 
+                        setCurrentStrategy({...strategy, strategy_data: parsedData}); 
+                      }}
+                      className="text-indigo-600 hover:text-indigo-900 p-1"
+                      title="Modifier"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(strategy.id)}
+                      className="text-red-600 hover:text-red-900 p-1"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
