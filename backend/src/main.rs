@@ -42,6 +42,7 @@ async fn main() {
 
     let api_routes = Router::new()
         .route("/v1/equity/monte-carlo", post(api::calculate_equity_handler))
+        .route("/v1/equity/hand-matrix", post(api::hand_matrix_handler))
         .route("/v1/range/categorize", post(api::categorize_handler));
 
     let config_routes = crud::router(app_state);

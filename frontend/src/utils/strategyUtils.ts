@@ -169,6 +169,43 @@ export const getAllHeroNodesForStreet = (
   return heroes;
 };
 
+/** Tous les nœuds hero_action dans l'arbre d'une stratégie racine (toutes tailles de mise). */
+export const getAllHeroActionsInSubtree = (
+  allStrategies: StrategyNode[],
+  rootId: number,
+  street: DbStreet,
+): StrategyNode[] => {
+  const childrenByParent = new Map<number, StrategyNode[]>();
+  for (const s of allStrategies) {
+    if (s.parent_strategy_id != null) {
+      const list = childrenByParent.get(s.parent_strategy_id) ?? [];
+      list.push(s);
+      childrenByParent.set(s.parent_strategy_id, list);
+    }
+  }
+
+  const result: StrategyNode[] = [];
+  const queue = [rootId];
+  const visited = new Set<number>();
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+
+    const node = allStrategies.find(s => s.id === id);
+    if (node?.street === street && node.hero_action) {
+      result.push(node);
+    }
+
+    for (const child of childrenByParent.get(id) ?? []) {
+      queue.push(child.id);
+    }
+  }
+
+  return result.sort((a, b) => a.id - b.id);
+};
+
 export const getVillainNodeForHero = (
   allStrategies: StrategyNode[],
   heroNode: StrategyNode

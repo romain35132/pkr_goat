@@ -18,6 +18,17 @@ import {
   getVillainNodeForHero,
 } from './utils/strategyUtils';
 import { buildStrategyRange } from './utils/strategyRangeUtils';
+import { HeroStrategyMatrix } from './components/HeroStrategyMatrix';
+import { HeroRangeModal } from './components/HeroRangeModal';
+import {
+  buildActionOptions,
+  computeHeroStrategyMatrix,
+  getEffectiveHeroRange,
+  ActionOption,
+  HandRecommendation,
+  ActionDisplayStyle,
+  ComboPlayDetail,
+} from './utils/heroStrategyUtils';
 
 interface EquityResult {
   equity: number;
@@ -77,6 +88,8 @@ export interface StreetState {
 
 const PokerEquityCalculator: React.FC = () => {
   const [playerCards, setPlayerCards] = useState<string[]>([]);
+  const [heroMode, setHeroMode] = useState<'combo' | 'range'>('combo');
+  const [heroRange, setHeroRange] = useState<Record<string, number>>({});
   const [boardCards, setBoardCards] = useState<string[]>([]);
   
   const [ranges, setRanges] = useState<Record<Street, Record<string, number>>>({
@@ -88,6 +101,7 @@ const PokerEquityCalculator: React.FC = () => {
   
   const [isPlayerHandOpen, setIsPlayerHandOpen] = useState(true);
   const [isBoardOpen, setIsBoardOpen] = useState(true);
+  const [isHeroRangeModalOpen, setIsHeroRangeModalOpen] = useState(false);
 
   const [potSize, setPotSize] = useState<number>(0);
   const [actionType, setActionType] = useState<'Check' | 'Check/Fold' | 'Call' | 'Bet/Raise'>('Call');
@@ -110,6 +124,13 @@ const PokerEquityCalculator: React.FC = () => {
   const [activeCategories, setActiveCategories] = useState<Record<string, boolean>>({});
   const [filterRevision, setFilterRevision] = useState(0);
   const [strategiesResults, setStrategiesResults] = useState<Record<string, { equity: number, ev: number, loading: boolean, error?: string }>>({});
+  const [heroStrategyLoading, setHeroStrategyLoading] = useState(false);
+  const [heroStrategyError, setHeroStrategyError] = useState('');
+  const [heroRecommendations, setHeroRecommendations] = useState<HandRecommendation[]>([]);
+  const [heroActionStyles, setHeroActionStyles] = useState<Record<string, ActionDisplayStyle>>({});
+  const [heroAggregateEV, setHeroAggregateEV] = useState(0);
+  const [heroActionOptions, setHeroActionOptions] = useState<ActionOption[]>([]);
+  const [heroComboDetailsByHand, setHeroComboDetailsByHand] = useState<Record<string, ComboPlayDetail[]>>({});
 
   useEffect(() => {
     const fetchStrategies = async () => {
@@ -133,9 +154,31 @@ const PokerEquityCalculator: React.FC = () => {
     return 'River';
   };
 
+  const rangeToString = (range: Record<string, number>) =>
+    Object.entries(range)
+      .filter(([, w]) => w > 0)
+      .map(([hand, weight]) => (weight === 100 ? hand : `${hand}:${weight}`))
+      .join(', ');
+
   const currentStreet = getCurrentStreet(boardCards);
   const currentStreetDb = streetToDb(currentStreet);
   const currentRange = ranges[currentStreet];
+
+  const heroDeadCards = useMemo(
+    () => (heroMode === 'combo' ? [...playerCards, ...boardCards] : [...boardCards]),
+    [heroMode, playerCards, boardCards],
+  );
+
+  const effectiveHeroRange = useMemo(
+    () => getEffectiveHeroRange(heroRange, heroDeadCards),
+    [heroRange, heroDeadCards],
+  );
+
+  const isHeroReady = heroMode === 'combo'
+    ? playerCards.length === 2
+    : Object.keys(effectiveHeroRange).length > 0;
+
+  const heroRangeStr = useMemo(() => rangeToString(effectiveHeroRange), [effectiveHeroRange]);
 
   const preflopStrategies = useMemo(() => allStrategies.filter(s => s.street === 'PREFLOP'), [allStrategies]);
 
@@ -271,11 +314,6 @@ const PokerEquityCalculator: React.FC = () => {
     setFilterRevision(r => r + 1);
   }, [currentStreetDb, allStrategies]);
 
-  const rangeToString = (range: Record<string, number>) =>
-    Object.entries(range)
-      .map(([hand, weight]) => (weight === 100 ? hand : `${hand}:${weight}`))
-      .join(', ');
-
   // Helper to compute range for a strategy, respecting active category filters
   const getStrategyRange = (
     strategyData: any,
@@ -305,14 +343,13 @@ const PokerEquityCalculator: React.FC = () => {
 
   const opponentCombos = useMemo(() => {
     let total = 0;
-    const deadCards = [...playerCards, ...boardCards];
     for (const [hand, weight] of Object.entries(currentRange)) {
       if (weight > 0) {
-        total += getComboCount(hand, deadCards) * (weight / 100);
+        total += getComboCount(hand, heroDeadCards) * (weight / 100);
       }
     }
     return total;
-  }, [currentRange, playerCards, boardCards]);
+  }, [currentRange, heroDeadCards]);
 
   const baseRangeForCurrentStreet = useMemo(() => {
     if (currentStreet === 'Flop') return ranges.Preflop;
@@ -325,22 +362,21 @@ const PokerEquityCalculator: React.FC = () => {
 
   const baseCombos = useMemo(() => {
     let total = 0;
-    const deadCards = [...playerCards, ...boardCards];
     const baseRange = getBaseRangeForCurrentStreet();
     for (const [hand, weight] of Object.entries(baseRange)) {
       if (weight > 0) {
-        total += getComboCount(hand, deadCards) * (weight / 100);
+        total += getComboCount(hand, heroDeadCards) * (weight / 100);
       }
     }
     return total;
-  }, [ranges, currentStreet, playerCards, boardCards]);
+  }, [ranges, currentStreet, heroDeadCards]);
 
   // Auto-calculate all flop strategies
   useEffect(() => {
     let isActive = true;
 
     const calculateAllStrategies = async () => {
-      if (currentStreet === 'Preflop' || heroStrategiesAtStreet.length === 0 || playerCards.length !== 2 || baseCategories.length === 0 || Object.keys(activeCategories).length === 0) {
+      if (currentStreet === 'Preflop' || heroStrategiesAtStreet.length === 0 || !isHeroReady || baseCategories.length === 0 || Object.keys(activeCategories).length === 0) {
         setStrategiesResults({});
         return;
       }
@@ -362,15 +398,24 @@ const PokerEquityCalculator: React.FC = () => {
         }
 
         try {
+          const equityBody = heroMode === 'range'
+            ? {
+                player_range: heroRangeStr,
+                opponent_range: strategyRangeStr,
+                board: boardCards.join(' '),
+                iterations: 50000,
+              }
+            : {
+                player_hand: playerCards.join(''),
+                opponent_range: strategyRangeStr,
+                board: boardCards.join(' '),
+                iterations: 50000,
+              };
+
           const response = await fetch('/api/v1/equity/monte-carlo', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              player_hand: playerCards.join(''),
-              opponent_range: strategyRangeStr,
-              board: boardCards.join(' '),
-              iterations: 50000, // Slightly fewer iterations for speed
-            }),
+            body: JSON.stringify(equityBody),
           });
 
           const data = await response.json();
@@ -384,11 +429,10 @@ const PokerEquityCalculator: React.FC = () => {
           
           // Estimate fold equity based on combos
           let strategyCombos = 0;
-          const deadCards = [...playerCards, ...boardCards];
 
           for (const [hand, weight] of Object.entries(strategyRangeObj)) {
             if (weight > 0) {
-              strategyCombos += getComboCount(hand, deadCards) * (weight / 100);
+              strategyCombos += getComboCount(hand, heroDeadCards) * (weight / 100);
             }
           }
           
@@ -424,7 +468,7 @@ const PokerEquityCalculator: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [currentStreet, heroStrategiesAtStreet, playerCards, boardCards, baseCategories, activeCategories, potSize, baseCombos, allStrategies]);
+  }, [currentStreet, heroStrategiesAtStreet, isHeroReady, heroMode, heroRangeStr, playerCards, boardCards, baseCategories, activeCategories, potSize, baseCombos, allStrategies, heroDeadCards]);
 
   useEffect(() => {
     if (currentStreet !== 'Preflop' && baseCombos > 0) {
@@ -454,10 +498,18 @@ const PokerEquityCalculator: React.FC = () => {
 
   // Auto-collapse when selections are complete
   useEffect(() => {
-    if (playerCards.length === 2) {
+    if (heroMode === 'combo' && playerCards.length === 2) {
       setIsPlayerHandOpen(false);
     }
-  }, [playerCards.length]);
+    if (heroMode === 'range' && Object.keys(effectiveHeroRange).length > 0) {
+      setIsPlayerHandOpen(false);
+    }
+  }, [playerCards.length, heroMode, effectiveHeroRange]);
+
+  const openHeroRangeModal = () => {
+    setHeroMode('range');
+    setIsHeroRangeModalOpen(true);
+  };
 
   useEffect(() => {
     if (boardCards.length === 5) {
@@ -476,7 +528,7 @@ const PokerEquityCalculator: React.FC = () => {
     let isActive = true;
 
     const calculateEquity = async () => {
-      if (playerCards.length !== 2) {
+      if (!isHeroReady) {
         return;
       }
       if (Object.keys(currentRange).length === 0) {
@@ -487,17 +539,26 @@ const PokerEquityCalculator: React.FC = () => {
       setError('');
 
       try {
+        const body = heroMode === 'range'
+          ? {
+              player_range: heroRangeStr,
+              opponent_range: opponentRange,
+              board: board,
+              iterations: 100000,
+            }
+          : {
+              player_hand: playerHand,
+              opponent_range: opponentRange,
+              board: board,
+              iterations: 100000,
+            };
+
         const response = await fetch('/api/v1/equity/monte-carlo', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            player_hand: playerHand,
-            opponent_range: opponentRange,
-            board: board,
-            iterations: 100000,
-          }),
+          body: JSON.stringify(body),
         });
 
         const data = await response.json();
@@ -519,7 +580,7 @@ const PokerEquityCalculator: React.FC = () => {
       }
     };
 
-    if (playerCards.length === 2 && Object.keys(currentRange).length > 0) {
+    if (isHeroReady && Object.keys(currentRange).length > 0) {
       calculateEquity();
     } else {
       setResult(null);
@@ -528,12 +589,89 @@ const PokerEquityCalculator: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [playerHand, opponentRange, board, playerCards.length, currentRange]);
+  }, [playerHand, heroRangeStr, heroMode, opponentRange, board, isHeroReady, currentRange]);
+
+  // Hero strategy matrix (range mode)
+  useEffect(() => {
+    if (heroMode !== 'range' || !isHeroReady || Object.keys(currentRange).length === 0) {
+      setHeroRecommendations([]);
+      setHeroActionStyles({});
+      setHeroAggregateEV(0);
+      setHeroActionOptions([]);
+      return;
+    }
+
+    let isActive = true;
+
+    const runMatrix = async () => {
+      const postflopReady = currentStreet === 'Preflop'
+        || (baseCategories.length > 0 && Object.keys(activeCategories).length > 0);
+
+      if (!postflopReady) {
+        setHeroRecommendations([]);
+        setHeroActionOptions([]);
+        return;
+      }
+
+      const actions = buildActionOptions({
+        currentStreet,
+        selectedPreflopId: selectedStrategyId,
+        heroStrategiesAtStreet,
+        allStrategies,
+        baseRange: baseRangeForCurrentStreet,
+        opponentRange: currentRange,
+        deadCards: heroDeadCards,
+        getStrategyRange: (data) => getStrategyRange(data, baseCategories, activeCategories, boardCards.length),
+        potSize,
+        actionType,
+        actionAmount,
+        foldEquity,
+      });
+
+      if (!isActive) return;
+      setHeroActionOptions(actions);
+      setHeroStrategyLoading(true);
+      setHeroStrategyError('');
+
+      try {
+        const result = await computeHeroStrategyMatrix(
+          effectiveHeroRange,
+          actions,
+          board,
+          heroDeadCards,
+          opponentRange,
+        );
+        if (!isActive) return;
+        setHeroRecommendations(result.recommendations);
+        setHeroActionStyles(result.actionStyleMap);
+        setHeroComboDetailsByHand(result.comboDetailsByHand);
+        setHeroAggregateEV(result.aggregateEV);
+      } catch (err: any) {
+        if (!isActive) return;
+        setHeroStrategyError(err.message || 'Erreur stratégie hero');
+        setHeroRecommendations([]);
+      } finally {
+        if (isActive) setHeroStrategyLoading(false);
+      }
+    };
+
+    runMatrix();
+    return () => { isActive = false; };
+  }, [
+    heroMode, isHeroReady, effectiveHeroRange, currentRange, currentStreet,
+    heroStrategiesAtStreet, allStrategies, baseRangeForCurrentStreet, selectedStrategyId,
+    baseCategories, activeCategories, boardCards.length, board,
+    heroDeadCards, potSize, actionType, actionAmount, foldEquity,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (playerCards.length !== 2) {
+    if (heroMode === 'combo' && playerCards.length !== 2) {
       setError('Veuillez sélectionner exactement 2 cartes pour votre main.');
+      return;
+    }
+    if (heroMode === 'range' && Object.keys(effectiveHeroRange).length === 0) {
+      setError('Veuillez sélectionner au moins une main dans votre range hero.');
       return;
     }
     if (Object.keys(currentRange).length === 0) {
@@ -550,12 +688,21 @@ const PokerEquityCalculator: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          player_hand: playerHand,
-          opponent_range: opponentRange,
-          board: board,
-          iterations: 100000,
-        }),
+        body: JSON.stringify(
+          heroMode === 'range'
+            ? {
+                player_range: heroRangeStr,
+                opponent_range: opponentRange,
+                board: board,
+                iterations: 100000,
+              }
+            : {
+                player_hand: playerHand,
+                opponent_range: opponentRange,
+                board: board,
+                iterations: 100000,
+              },
+        ),
       });
 
       const data = await response.json();
@@ -578,20 +725,55 @@ const PokerEquityCalculator: React.FC = () => {
       {/* Top Row: My Hand, Board */}
       <div style={{ display: 'flex', gap: '20px', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #e0e0e0', maxHeight: '190px', flexShrink: 0 }}>
         
-        <div style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: '1.2', display: 'flex', flexDirection: 'column' }}>
           <div 
             onClick={() => setIsPlayerHandOpen(!isPlayerHandOpen)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: '5px' }}
           >
             <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
-              Votre Main ({playerCards.length}/2)
+              {heroMode === 'combo'
+                ? `Votre Main (${playerCards.length}/2)`
+                : `Votre Range (${Object.keys(effectiveHeroRange).length} mains)`}
             </label>
             <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
               {isPlayerHandOpen ? '▼ Replier' : '▶ Déplier'}
             </span>
           </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setHeroMode('combo'); setIsHeroRangeModalOpen(false); }}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '4px',
+                border: `1px solid ${heroMode === 'combo' ? '#3498db' : '#bdc3c7'}`,
+                backgroundColor: heroMode === 'combo' ? '#ebf5fb' : '#fff',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: heroMode === 'combo' ? 'bold' : 'normal',
+              }}
+            >
+              Combo
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openHeroRangeModal(); }}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '4px',
+                border: `1px solid ${heroMode === 'range' ? '#3498db' : '#bdc3c7'}`,
+                backgroundColor: heroMode === 'range' ? '#ebf5fb' : '#fff',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: heroMode === 'range' ? 'bold' : 'normal',
+              }}
+            >
+              Range
+            </button>
+          </div>
           
-          {isPlayerHandOpen && (
+          {isPlayerHandOpen && heroMode === 'combo' && (
             <div style={{ flex: 1, overflowY: 'auto' }}>
               <CardSelector 
                 selectedCards={playerCards} 
@@ -601,9 +783,46 @@ const PokerEquityCalculator: React.FC = () => {
               />
             </div>
           )}
-          {!isPlayerHandOpen && (
+          {heroMode === 'range' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsHeroRangeModalOpen(true); }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: '1px solid #3498db',
+                  backgroundColor: '#ebf5fb',
+                  color: '#2980b9',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                }}
+              >
+                {Object.keys(effectiveHeroRange).length > 0
+                  ? `Modifier le range (${Object.keys(effectiveHeroRange).length} mains)`
+                  : 'Choisir un range…'}
+              </button>
+              {Object.keys(effectiveHeroRange).length > 0 && (
+                <span style={{ fontSize: '13px', color: '#7f8c8d' }}>
+                  {heroRangeStr.length > 60 ? heroRangeStr.slice(0, 60) + '…' : heroRangeStr}
+                </span>
+              )}
+            </div>
+          )}
+          {!isPlayerHandOpen && heroMode === 'combo' && (
             <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
               Sélection: <SelectedCardsDisplay cards={playerCards} />
+            </div>
+          )}
+          {!isPlayerHandOpen && heroMode === 'range' && (
+            <div
+              style={{ fontSize: '14px', color: '#7f8c8d', cursor: 'pointer' }}
+              onClick={(e) => { e.stopPropagation(); setIsHeroRangeModalOpen(true); }}
+            >
+              {Object.keys(effectiveHeroRange).length > 0
+                ? `${Object.keys(effectiveHeroRange).length} mains — cliquer pour modifier`
+                : 'Aucun range — cliquer pour choisir'}
             </div>
           )}
         </div>
@@ -627,7 +846,7 @@ const PokerEquityCalculator: React.FC = () => {
                 selectedCards={boardCards} 
                 onChange={setBoardCards} 
                 maxCards={5} 
-                disabledCards={playerCards}
+                disabledCards={heroMode === 'combo' ? playerCards : []}
               />
             </div>
           )}
@@ -725,7 +944,7 @@ const PokerEquityCalculator: React.FC = () => {
             <RangeSelector 
               selectedHands={currentRange} 
               onChange={handleRangeChange} 
-              deadCards={[...playerCards, ...boardCards]}
+              deadCards={heroDeadCards}
             />
           ) : (
             <RangeSelector 
@@ -733,7 +952,7 @@ const PokerEquityCalculator: React.FC = () => {
               onChange={() => {}} 
               allowedHands={postflopAllowedHands}
               readOnly={true}
-              deadCards={[...playerCards, ...boardCards]}
+              deadCards={heroDeadCards}
             />
           )}
         </div>
@@ -775,7 +994,7 @@ const PokerEquityCalculator: React.FC = () => {
               onRangeGroupsChange={handleRangeGroupsChange}
               onBaseCategoriesChange={setBaseCategories}
               onActiveCategoriesChange={handleActiveCategoriesChange}
-              deadCards={[...playerCards, ...boardCards]}
+              deadCards={heroDeadCards}
               strategyId={selectedStreetStrategy?.id}
               strategyData={selectedStreetStrategy?.strategy_data as Record<string, number> | undefined}
               filterRevision={filterRevision}
@@ -956,7 +1175,23 @@ const PokerEquityCalculator: React.FC = () => {
           )}
 
           {/* All Strategies Results */}
-          {currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0 && playerCards.length === 2 && (
+          {heroMode === 'range' && (
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <HeroStrategyMatrix
+                recommendations={heroRecommendations}
+                actions={heroActionOptions}
+                actionStyleMap={heroActionStyles}
+                comboDetailsByHand={heroComboDetailsByHand}
+                loading={heroStrategyLoading}
+                error={heroStrategyError}
+                aggregateEV={heroAggregateEV}
+                currentStreet={currentStreet}
+                deadCards={heroDeadCards}
+              />
+            </div>
+          )}
+
+          {currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0 && isHeroReady && (
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
               <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Toutes les lignes ({currentStreet})</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1007,6 +1242,18 @@ const PokerEquityCalculator: React.FC = () => {
           )}
         </form>
       </div>
+
+      {isHeroRangeModalOpen && (
+        <HeroRangeModal
+          selectedRange={heroRange}
+          deadCards={boardCards}
+          onClose={() => setIsHeroRangeModalOpen(false)}
+          onSave={(range) => {
+            setHeroRange(range);
+            setIsPlayerHandOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

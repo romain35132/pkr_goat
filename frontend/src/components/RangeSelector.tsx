@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-
+import {
+  ActionDisplayStyle,
+  ActionOption,
+  ComboPlayDetail,
+  HandRecommendation,
+  buildActionDistribution,
+  ActionDistributionSegment,
+} from '../utils/heroStrategyUtils';
+import { HeroStrategyTooltip, HeroStrategyTooltipState } from './HeroStrategyTooltip';
 interface RangeSelectorProps {
   selectedHands: Record<string, number>;
   onChange: React.Dispatch<React.SetStateAction<Record<string, number>>>;
@@ -7,6 +15,11 @@ interface RangeSelectorProps {
   readOnly?: boolean;
   deadCards?: string[];
   effectiveHands?: Record<string, number>;
+  actionStyles?: Record<string, ActionDisplayStyle>;
+  comboDetailsByHand?: Record<string, ComboPlayDetail[]>;
+  recommendations?: HandRecommendation[];
+  actionOptions?: ActionOption[];
+  size?: 'normal' | 'large';
 }
 
 const VALUES = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -90,10 +103,17 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
   readOnly = false,
   deadCards = [],
   effectiveHands,
+  actionStyles: handActionStyles,
+  comboDetailsByHand,
+  recommendations,
+  actionOptions,
+  size = 'normal',
 }) => {
   const [currentWeight, setCurrentWeight] = useState<number>(100);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragMode, setDragMode] = useState<'select' | 'deselect'>('select');
+  const [hoverTooltip, setHoverTooltip] = useState<HeroStrategyTooltipState | null>(null);
+  const [tooltipPinned, setTooltipPinned] = useState(false);
 
   useEffect(() => {
     const handleMouseUp = () => setIsDragging(false);
@@ -185,10 +205,45 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
   }, [selectedHands, deadCards]);
   const currentPercent = Math.round((currentTotalCombos / 1326) * 100);
 
+  const hoveredRec = hoverTooltip
+    ? recommendations?.find(r => r.hand === hoverTooltip.hand)
+    : undefined;
+
+  const showStrategyTooltip = readOnly && !!hoverTooltip && !!hoveredRec;
+
+  const updateHoverTooltip = (hand: string, x: number, y: number) => {
+    const hasComboDetails = !!comboDetailsByHand?.[hand]?.length;
+    const hasRec = !!recommendations?.some(r => r.hand === hand);
+    if (hasComboDetails || hasRec) {
+      setHoverTooltip({ hand, x, y });
+    }
+  };
+
+  const clearHoverTooltip = () => {
+    if (!tooltipPinned) setHoverTooltip(null);
+  };
+
+  const isHeroStrategyGrid = readOnly && size === 'large';
+  const gridMaxWidth = size === 'large' ? 'min(1400px, calc(98vw - 48px))' : '700px';
+  const cellFontSize = size === 'large' ? '18px' : '14px';
+  const comboCountFontSize = size === 'large' ? '12px' : '10px';
+  const handLabelFontSize = size === 'large' ? '11px' : '9px';
+
+  const distributionByHand = useMemo(() => {
+    if (!comboDetailsByHand) return {};
+    const result: Record<string, ActionDistributionSegment[]> = {};
+    for (const [hand, details] of Object.entries(comboDetailsByHand)) {
+      if (details.length > 0) {
+        result[hand] = buildActionDistribution(details);
+      }
+    }
+    return result;
+  }, [comboDetailsByHand]);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', alignItems: 'center', position: 'relative' }}>
       {!readOnly && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px', width: '100%', maxWidth: '700px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px', width: '100%', maxWidth: gridMaxWidth }}>
           <label htmlFor="weight-slider" style={{ fontSize: '16px', fontWeight: 'bold', color: `hsl(${(currentWeight * 120) / 100}, 100%, 40%)` }}>
             Pondération: {currentWeight}%
           </label>
@@ -205,8 +260,11 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
         </div>
       )}
       <div 
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(13, 1fr)', gap: '2px', width: '100%', maxWidth: '700px' }}
-        onMouseLeave={() => setIsDragging(false)}
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(13, 1fr)', gap: size === 'large' ? '4px' : '2px', width: '100%', maxWidth: gridMaxWidth }}
+        onMouseLeave={() => {
+          setIsDragging(false);
+          if (!tooltipPinned) setHoverTooltip(null);
+        }}
       >
         {VALUES.map((rowVal, i) =>
           VALUES.map((colVal, j) => {
@@ -239,7 +297,20 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
               cellColor = 'white';
             }
 
-            if (readOnly) {
+            const handStyle = handActionStyles?.[hand];
+            const distribution = distributionByHand[hand];
+            const hasDistribution = readOnly && isSelected && distribution && distribution.length > 0;
+            const isMixedDistribution = hasDistribution && distribution.length > 1;
+
+            if (hasDistribution) {
+              cellBgColor = '#2d3436';
+              cellColor = 'white';
+              cellOpacity = 1;
+            } else if (readOnly && handStyle && isSelected) {
+              cellBgColor = handStyle.color;
+              cellColor = 'white';
+              cellOpacity = 1;
+            } else if (readOnly) {
               cellBgColor = isSelected ? bgColor : '#f8f9fa';
               cellColor = isSelected ? '#2d3436' : '#bdc3c7';
               cellOpacity = isSelected ? 1 : 0.3;
@@ -249,6 +320,10 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
               }
             }
 
+            const hasStrategyData = isSelected && (
+              comboDetailsByHand?.[hand]?.length || recommendations?.some(r => r.hand === hand)
+            );
+
             return (
               <div
                 key={hand}
@@ -257,35 +332,112 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
                   e.preventDefault(); 
                   handleMouseDown(hand); 
                 }}
-                onMouseEnter={() => {
-                  if (!isAllowed || readOnly) return;
-                  handleMouseEnter(hand);
+                onMouseEnter={(e) => {
+                  if (!isAllowed) return;
+                  if (!readOnly) handleMouseEnter(hand);
+                  if (readOnly && hasStrategyData) {
+                    setTooltipPinned(false);
+                    updateHoverTooltip(hand, e.clientX, e.clientY);
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (readOnly && hasStrategyData) clearHoverTooltip();
+                }}
+                onMouseMove={(e) => {
+                  if (readOnly && hasStrategyData) updateHoverTooltip(hand, e.clientX, e.clientY);
                 }}
                 style={{
-                  aspectRatio: '1',
+                  aspectRatio: isHeroStrategyGrid ? '2 / 1' : '1',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: cellBgColor,
+                  backgroundColor: hasDistribution ? '#ecf0f1' : cellBgColor,
                   color: cellColor,
                   border: '1px solid rgba(0,0,0,0.1)',
                   borderRadius: '2px',
                   cursor: isAllowed ? (readOnly ? 'default' : 'pointer') : 'not-allowed',
-                  fontSize: '14px',
+                  fontSize: cellFontSize,
                   fontWeight: 'bold',
                   padding: 0,
                   position: 'relative',
                   userSelect: 'none',
                   opacity: cellOpacity,
+                  overflow: 'hidden',
                 }}
-                title={`${hand}${isSelected ? ` (${weight}%)` : ''}`}
+                title={
+                  readOnly && hasStrategyData
+                    ? undefined
+                    : `${hand}${isSelected ? ` (${weight}%)` : ''}${handStyle ? ` → ${handStyle.label}` : ''}`
+                }
               >
-                {hand}
+                {isHeroStrategyGrid && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '3px',
+                    left: '4px',
+                    fontSize: handLabelFontSize,
+                    fontWeight: 'bold',
+                    lineHeight: 1,
+                    color: isSelected
+                      ? (hasDistribution ? 'white' : cellColor)
+                      : '#95a5a6',
+                    textShadow: isSelected && (hasDistribution || cellColor === 'white')
+                      ? '0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.8)'
+                      : 'none',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                  }}>
+                    {hand}
+                  </div>
+                )}
+                {hasDistribution && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'row',
+                  }}>
+                    {distribution.map(seg => (
+                      <div
+                        key={seg.actionId}
+                        style={{
+                          width: `${seg.percent}%`,
+                          backgroundColor: seg.color,
+                          minWidth: seg.percent > 0 ? '1px' : 0,
+                        }}
+                        title={`${seg.shortLabel}: ${Math.round(seg.percent)}%`}
+                      />
+                    ))}
+                  </div>
+                )}
+                {readOnly && hasDistribution ? (
+                  <span style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    fontSize: isMixedDistribution ? '8px' : (distribution[0].shortLabel.length > 4 ? '8px' : '10px'),
+                    lineHeight: 1.1,
+                    textAlign: 'center',
+                    padding: '0 1px',
+                    color: 'white',
+                    textShadow: '0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.8)',
+                    fontWeight: 'bold',
+                  }}>
+                    {isMixedDistribution
+                      ? distribution.map(s => `${Math.round(s.percent)}`).join('/')
+                      : distribution[0].shortLabel}
+                  </span>
+                ) : readOnly && handStyle ? (
+                  <span style={{ fontSize: handStyle.shortLabel.length > 4 ? '9px' : '11px', lineHeight: 1.1, textAlign: 'center', padding: '0 1px' }}>
+                    {handStyle.shortLabel}
+                  </span>
+                ) : (
+                  hand
+                )}
                 <div style={{
                   position: 'absolute',
                   bottom: '2px',
                   right: '2px',
-                  fontSize: '10px',
+                  fontSize: comboCountFontSize,
                   opacity: 0.7,
                   fontWeight: 'normal'
                 }}>
@@ -310,12 +462,12 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
       </div>
       {!readOnly && (
         <>
-          <div style={{ display: 'flex', gap: '10px', marginTop: '10px', width: '100%', maxWidth: '700px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px', width: '100%', maxWidth: gridMaxWidth, alignItems: 'center' }}>
             <button type="button" onClick={selectAll} style={{ padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #bdc3c7', backgroundColor: '#ecf0f1' }}>Tout sélectionner</button>
             <button type="button" onClick={clearRange} style={{ padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #e74c3c', backgroundColor: '#fadbd8', color: '#c0392b' }}>Effacer</button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', width: '100%', maxWidth: '700px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', width: '100%', maxWidth: gridMaxWidth, padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
             <label htmlFor="top-percent-slider" style={{ fontSize: '14px', fontWeight: 'bold', minWidth: '120px' }}>
               Top {currentPercent}% des mains
             </label>
@@ -331,6 +483,22 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
             />
           </div>
         </>
+      )}
+
+      {showStrategyTooltip && hoverTooltip && hoveredRec && (
+        <HeroStrategyTooltip
+          tooltip={hoverTooltip}
+          deadCards={deadCards}
+          comboDetails={comboDetailsByHand?.[hoverTooltip.hand]}
+          handRecommendation={hoveredRec}
+          actionOptions={actionOptions}
+          size={size}
+          onMouseEnter={() => setTooltipPinned(true)}
+          onMouseLeave={() => {
+            setTooltipPinned(false);
+            setHoverTooltip(null);
+          }}
+        />
       )}
     </div>
   );

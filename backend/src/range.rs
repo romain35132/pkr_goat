@@ -2,6 +2,35 @@ use crate::parser::{parse_card, parse_hand, HoleCards};
 use rs_poker::core::{Card, Suit, Value};
 use std::collections::HashMap;
 
+/// Parse a range string preserving original hand notations (e.g. "AKs", "QQ:75").
+pub fn parse_range_entries(range_str: &str) -> Result<Vec<(String, u8)>, String> {
+    let mut entries = Vec::new();
+    let parts: Vec<&str> = range_str.split(',').map(|s| s.trim()).collect();
+
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+
+        let mut weight = 100u8;
+        let mut hand_part = part;
+        if let Some(idx) = part.find(':') {
+            hand_part = &part[..idx];
+            if let Ok(w) = part[idx + 1..].parse::<u8>() {
+                weight = w;
+            }
+        }
+
+        if hand_part.is_empty() {
+            continue;
+        }
+
+        entries.push((hand_part.to_string(), weight));
+    }
+
+    Ok(entries)
+}
+
 pub fn expand_range(range_str: &str) -> Result<Vec<(HoleCards, u8)>, String> {
     let mut all_hands = HashMap::new();
     let parts: Vec<&str> = range_str.split(',').map(|s| s.trim()).collect();
