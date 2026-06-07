@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   ActionDisplayStyle,
@@ -289,12 +290,12 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
             const isEffective = effectiveWeight !== undefined && effectiveWeight > 0;
 
             let cellBgColor = isSelected ? '#2d3436' : bgColor;
-            let cellColor = isSelected ? 'white' : '#2d3436';
+            let cellColor = isSelected ? themeColors.surface : '#2d3436';
             let cellOpacity = isAllowed ? 1 : 0.2;
 
             if (!isSelected && isEffective) {
               cellBgColor = '#95a5a6'; // gray
-              cellColor = 'white';
+              cellColor = themeColors.surface;
             }
 
             const handStyle = handActionStyles?.[hand];
@@ -304,15 +305,15 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
 
             if (hasDistribution) {
               cellBgColor = '#2d3436';
-              cellColor = 'white';
+              cellColor = themeColors.surface;
               cellOpacity = 1;
             } else if (readOnly && handStyle && isSelected) {
               cellBgColor = handStyle.color;
-              cellColor = 'white';
+              cellColor = themeColors.surface;
               cellOpacity = 1;
             } else if (readOnly) {
-              cellBgColor = isSelected ? bgColor : '#f8f9fa';
-              cellColor = isSelected ? '#2d3436' : '#bdc3c7';
+              cellBgColor = isSelected ? bgColor : themeColors.surfaceAlt;
+              cellColor = isSelected ? '#2d3436' : themeColors.borderInput;
               cellOpacity = isSelected ? 1 : 0.3;
               if (!isAllowed) {
                 cellOpacity = 0.1;
@@ -379,9 +380,9 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
                     fontWeight: 'bold',
                     lineHeight: 1,
                     color: isSelected
-                      ? (hasDistribution ? 'white' : cellColor)
+                      ? (hasDistribution ? themeColors.surface : cellColor)
                       : '#95a5a6',
-                    textShadow: isSelected && (hasDistribution || cellColor === 'white')
+                    textShadow: isSelected && (hasDistribution || cellColor === themeColors.surface)
                       ? '0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.8)'
                       : 'none',
                     zIndex: 2,
@@ -418,7 +419,7 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
                     lineHeight: 1.1,
                     textAlign: 'center',
                     padding: '0 1px',
-                    color: 'white',
+                    color: themeColors.surface,
                     textShadow: '0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.8)',
                     fontWeight: 'bold',
                   }}>
@@ -463,11 +464,11 @@ export const RangeSelector: React.FC<RangeSelectorProps> = ({
       {!readOnly && (
         <>
           <div style={{ display: 'flex', gap: '10px', marginTop: '10px', width: '100%', maxWidth: gridMaxWidth, alignItems: 'center' }}>
-            <button type="button" onClick={selectAll} style={{ padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #bdc3c7', backgroundColor: '#ecf0f1' }}>Tout sélectionner</button>
+            <button type="button" onClick={selectAll} style={{ padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', border: `1px solid ${themeColors.borderInput}`, backgroundColor: themeColors.border }}>Tout sélectionner</button>
             <button type="button" onClick={clearRange} style={{ padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #e74c3c', backgroundColor: '#fadbd8', color: '#c0392b' }}>Effacer</button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', width: '100%', maxWidth: gridMaxWidth, padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', width: '100%', maxWidth: gridMaxWidth, padding: '10px', backgroundColor: themeColors.surfaceAlt, borderRadius: '4px', border: `1px solid ${themeColors.border}` }}>
             <label htmlFor="top-percent-slider" style={{ fontSize: '14px', fontWeight: 'bold', minWidth: '120px' }}>
               Top {currentPercent}% des mains
             </label>

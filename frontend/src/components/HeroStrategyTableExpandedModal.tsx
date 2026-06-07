@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 import { HeroStrategyTable } from './HeroStrategyTable';
 import {
@@ -41,7 +42,7 @@ export const HeroStrategyTableExpandedModal: React.FC<HeroStrategyTableExpandedM
       >
         <div
           style={{
-            backgroundColor: 'white',
+            backgroundColor: themeColors.inputBg,
             padding: '20px',
             borderRadius: '12px',
             width: '98vw',
@@ -61,7 +62,7 @@ export const HeroStrategyTableExpandedModal: React.FC<HeroStrategyTableExpandedM
             gap: '12px',
             flexShrink: 0,
           }}>
-            <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '18px' }}>
+            <h3 style={{ margin: 0, color: themeColors.text, fontSize: '18px' }}>
               Stratégie Hero — {currentStreet}
             </h3>
             <button
@@ -69,9 +70,9 @@ export const HeroStrategyTableExpandedModal: React.FC<HeroStrategyTableExpandedM
               onClick={onClose}
               style={{
                 padding: '6px 12px',
-                border: '1px solid #bdc3c7',
+                border: `1px solid ${themeColors.borderInput}`,
                 borderRadius: '6px',
-                backgroundColor: '#f8f9fa',
+                backgroundColor: themeColors.surfaceAlt,
                 cursor: 'pointer',
                 fontSize: '14px',
               }}
@@ -80,7 +81,7 @@ export const HeroStrategyTableExpandedModal: React.FC<HeroStrategyTableExpandedM
             </button>
           </div>
 
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#7f8c8d', flexShrink: 0 }}>
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: themeColors.textMuted, flexShrink: 0 }}>
             Survolez une ligne pour voir le détail combo par combo.
           </p>
 

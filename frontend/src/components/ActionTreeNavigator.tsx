@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 import {
   StrategyNode,
@@ -49,9 +50,9 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
     return (
       <div style={{
         padding: '15px',
-        backgroundColor: '#f8f9fa',
+        backgroundColor: themeColors.surfaceAlt,
         borderRadius: '8px',
-        color: '#7f8c8d',
+        color: themeColors.textMuted,
         fontStyle: 'italic',
         textAlign: 'center',
         marginBottom: '20px',
@@ -137,7 +138,7 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
         alignItems: 'center',
         marginBottom: '10px',
       }}>
-        <label style={{ fontSize: '14px', color: '#2c3e50', fontWeight: 'bold', margin: 0 }}>
+        <label style={{ fontSize: '14px', color: themeColors.text, fontWeight: 'bold', margin: 0 }}>
           Arbre d'actions
         </label>
         {strategyPath.length > 0 && (
@@ -165,17 +166,17 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
           gap: '4px',
           alignItems: 'center',
           fontSize: '12px',
-          color: '#7f8c8d',
+          color: themeColors.textMuted,
           marginBottom: '12px',
           padding: '8px 10px',
-          backgroundColor: '#f8f9fa',
+          backgroundColor: themeColors.surfaceAlt,
           borderRadius: '6px',
         }}>
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={`${item.street}-${idx}`}>
-              {idx > 0 && <span style={{ color: '#bdc3c7' }}>›</span>}
+              {idx > 0 && <span style={{ color: themeColors.borderInput }}>›</span>}
               <span style={{
-                color: item.street === currentStreetDb ? '#3498db' : '#7f8c8d',
+                color: item.street === currentStreetDb ? '#3498db' : themeColors.textMuted,
                 fontWeight: item.street === currentStreetDb ? 'bold' : 'normal',
               }}>
                 {item.street !== 'PREFLOP' && <span style={{ color: '#95a5a6' }}>Vilain: </span>}
@@ -198,10 +199,10 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
             fontSize: '13px',
           }}
         >
-          <span style={{ color: '#7f8c8d' }}>{STREET_LABELS[street]} — Vilain: </span>
-          <strong style={{ color: '#2c3e50' }}>{villain ? formatVillainAction(villain) : '—'}</strong>
-          <span style={{ color: '#7f8c8d', margin: '0 8px' }}>|</span>
-          <span style={{ color: '#7f8c8d' }}>Hero: </span>
+          <span style={{ color: themeColors.textMuted }}>{STREET_LABELS[street]} — Vilain: </span>
+          <strong style={{ color: themeColors.text }}>{villain ? formatVillainAction(villain) : '—'}</strong>
+          <span style={{ color: themeColors.textMuted, margin: '0 8px' }}>|</span>
+          <span style={{ color: themeColors.textMuted }}>Hero: </span>
           <strong style={{ color: '#27ae60' }}>{formatHeroAction(hero)}</strong>
         </div>
       ))}
@@ -222,7 +223,7 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
 
       {villainActions.length > 0 && (
         <div>
-          <div style={{ fontSize: '13px', color: '#7f8c8d', marginBottom: '8px', fontWeight: 'bold' }}>
+          <div style={{ fontSize: '13px', color: themeColors.textMuted, marginBottom: '8px', fontWeight: 'bold' }}>
             Action Vilain — {STREET_LABELS[currentStreetDb]}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -236,9 +237,9 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
                   style={{
                     padding: '10px 16px',
                     borderRadius: '6px',
-                    border: `2px solid ${isSelected ? '#3498db' : '#bdc3c7'}`,
-                    backgroundColor: isSelected ? '#ebf5fb' : 'white',
-                    color: isSelected ? '#2980b9' : '#2c3e50',
+                    border: `2px solid ${isSelected ? '#3498db' : themeColors.borderInput}`,
+                    backgroundColor: isSelected ? themeColors.activeBg : themeColors.surface,
+                    color: isSelected ? themeColors.activeText : themeColors.text,
                     fontWeight: isSelected ? 'bold' : 'normal',
                     fontSize: '14px',
                     cursor: 'pointer',
@@ -257,10 +258,10 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
       {parentId !== null && villainActions.length === 0 && (
         <div style={{
           padding: '12px',
-          backgroundColor: '#f8f9fa',
+          backgroundColor: themeColors.surfaceAlt,
           borderRadius: '6px',
           fontSize: '13px',
-          color: '#7f8c8d',
+          color: themeColors.textMuted,
           fontStyle: 'italic',
         }}>
           Aucune action vilain configurée pour {STREET_LABELS[currentStreetDb]}.
@@ -269,7 +270,7 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
 
       {activeVillainId && heroActions.length > 0 && (
         <div style={{ marginTop: '14px' }}>
-          <div style={{ fontSize: '13px', color: '#7f8c8d', marginBottom: '8px', fontWeight: 'bold' }}>
+          <div style={{ fontSize: '13px', color: themeColors.textMuted, marginBottom: '8px', fontWeight: 'bold' }}>
             Action Hero — {STREET_LABELS[currentStreetDb]}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -283,9 +284,9 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
                   style={{
                     padding: '10px 16px',
                     borderRadius: '6px',
-                    border: `2px solid ${isSelected ? '#27ae60' : '#bdc3c7'}`,
-                    backgroundColor: isSelected ? '#e8f8f5' : 'white',
-                    color: isSelected ? '#1e8449' : '#2c3e50',
+                    border: `2px solid ${isSelected ? themeColors.filterActiveBorder : themeColors.borderInput}`,
+                    backgroundColor: isSelected ? themeColors.filterActiveBg : themeColors.surface,
+                    color: isSelected ? themeColors.filterActiveText : themeColors.text,
                     fontWeight: isSelected ? 'bold' : 'normal',
                     fontSize: '14px',
                     cursor: 'pointer',
@@ -319,24 +320,24 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
         <div style={{
           marginTop: '12px',
           padding: '12px',
-          backgroundColor: '#e8f8f5',
+          backgroundColor: themeColors.filterActiveBg,
           borderRadius: '6px',
-          border: '1px solid #a9dfbf',
+          border: `1px solid ${themeColors.filterActiveBorder}`,
           fontSize: '13px',
         }}>
           <div>
-            <span style={{ color: '#7f8c8d' }}>Ligne sélectionnée ({STREET_LABELS[currentStreetDb]}): </span>
-            <strong style={{ color: '#2c3e50' }}>
+            <span style={{ color: themeColors.textMuted }}>Ligne sélectionnée ({STREET_LABELS[currentStreetDb]}): </span>
+            <strong style={{ color: themeColors.text }}>
               {selectedVillainForStreet ? `${formatVillainAction(selectedVillainForStreet)} → ` : ''}
             </strong>
-            <strong style={{ color: '#27ae60' }}>{formatHeroAction(selectedHeroForStreet)}</strong>
+            <strong style={{ color: themeColors.filterActiveText }}>{formatHeroAction(selectedHeroForStreet)}</strong>
           </div>
           {(() => {
             const pot = computePotAtStrategy(selectedHeroForStreet, allStrategies)
               ?? selectedHeroForStreet.pot_size_bb;
             return pot != null ? (
-              <div style={{ marginTop: '4px', color: '#7f8c8d' }}>
-                Pot: <strong style={{ color: '#2c3e50' }}>{pot} bb</strong>
+              <div style={{ marginTop: '4px', color: themeColors.textMuted }}>
+                Pot: <strong style={{ color: themeColors.text }}>{pot} bb</strong>
               </div>
             ) : null;
           })()}
@@ -351,9 +352,9 @@ export const ActionTreeNavigator: React.FC<ActionTreeNavigatorProps> = ({
             marginTop: '10px',
             padding: '6px 12px',
             fontSize: '12px',
-            color: '#7f8c8d',
-            backgroundColor: 'white',
-            border: '1px solid #bdc3c7',
+            color: themeColors.textMuted,
+            backgroundColor: themeColors.inputBg,
+            border: `1px solid ${themeColors.borderInput}`,
             borderRadius: '4px',
             cursor: 'pointer',
           }}

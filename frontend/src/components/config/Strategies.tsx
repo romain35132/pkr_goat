@@ -158,6 +158,7 @@ const Strategies: React.FC = () => {
   const [bulkPercentage, setBulkPercentage] = useState(100);
   const [madeHandsExpanded, setMadeHandsExpanded] = useState(true);
   const [otherHandsExpanded, setOtherHandsExpanded] = useState(true);
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<number>>(new Set());
 
   const getStrategyValue = (cat: string, data: any) => {
     if (!data) return 0;
@@ -221,21 +222,21 @@ const Strategies: React.FC = () => {
     expanded: boolean,
     onToggle: () => void
   ) => (
-    <div className="border border-gray-200 rounded-md overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+    <div className="border border-gray-200 dark:border-gray-600 rounded-md overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
         <button
           type="button"
           onClick={onToggle}
-          className="flex items-center gap-2 font-bold text-gray-800 hover:text-blue-700"
+          className="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-100 hover:text-blue-700 dark:hover:text-blue-400"
         >
           {expanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
           {title}
-          <span className="text-xs font-normal text-gray-500">({categories.length})</span>
+          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({categories.length})</span>
         </button>
         <button
           type="button"
           onClick={() => selectCategoryGroup(categories)}
-          className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100"
+          className="px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/60"
         >
           Tout sélectionner
         </button>
@@ -251,22 +252,22 @@ const Strategies: React.FC = () => {
   const renderCategoryGrid = (categories: string[]) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
       {categories.map(cat => (
-        <div key={cat} className="flex items-center gap-2 p-2 rounded-md border border-gray-100 hover:bg-gray-50">
+        <div key={cat} className="flex items-center gap-2 p-2 rounded-md border border-gray-100 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
           <input
             type="checkbox"
             checked={selectedCategories.has(cat)}
             onChange={() => toggleCategorySelection(cat)}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0"
+            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 shrink-0"
             title="Sélectionner pour appliquer le pourcentage générique"
           />
           <div className="flex flex-col flex-1 min-w-0 space-y-1">
-            <label className="text-sm font-medium text-gray-700 truncate" title={categoryNames[cat]}>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={categoryNames[cat]}>
               {categoryNames[cat]}
             </label>
             <select
               value={getStrategyValue(cat, currentStrategy.strategy_data)}
               onChange={(e) => updateCategoryPercentage(cat, parseInt(e.target.value))}
-              className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white text-sm w-full"
+              className="rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1 border bg-white dark:bg-gray-800 dark:text-gray-100 text-sm w-full"
             >
               {PERCENTAGE_OPTIONS.map(p => (
                 <option key={p} value={p}>{p}%</option>
@@ -449,12 +450,57 @@ const Strategies: React.FC = () => {
     [strategies]
   );
 
+  const parentsWithChildren = useMemo(() => {
+    const set = new Set<number>();
+    for (const strategy of strategies) {
+      if (strategy.parent_strategy_id !== null) {
+        set.add(strategy.parent_strategy_id);
+      }
+    }
+    return set;
+  }, [strategies]);
+
+  const isStrategyVisible = useCallback((strategy: Strategy): boolean => {
+    let parentId = strategy.parent_strategy_id;
+    while (parentId !== null) {
+      if (collapsedNodes.has(parentId)) return false;
+      const parent = strategies.find(s => s.id === parentId);
+      parentId = parent?.parent_strategy_id ?? null;
+    }
+    return true;
+  }, [collapsedNodes, strategies]);
+
+  const visibleStrategies = useMemo(
+    () => orderedStrategies.filter(({ strategy }) => isStrategyVisible(strategy)),
+    [orderedStrategies, isStrategyVisible]
+  );
+
+  const toggleNodeCollapse = (id: number) => {
+    setCollapsedNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const collapseAllNodes = () => {
+    setCollapsedNodes(new Set(parentsWithChildren));
+  };
+
+  const expandAllNodes = () => {
+    setCollapsedNodes(new Set());
+  };
+
   if (loading) return <div className="p-4">Chargement...</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Gestion des Stratégies</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Gestion des Stratégies</h2>
         <button
           onClick={() => {
             resetBulkSelection();
@@ -469,31 +515,31 @@ const Strategies: React.FC = () => {
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 px-4 py-3 rounded">
           {error}
         </div>
       )}
 
       {isEditing && (
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="col-span-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Titre (Optionnel)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Titre (Optionnel)</label>
               <input
                 type="text"
                 value={currentStrategy.title || ''}
                 onChange={e => setCurrentStrategy({...currentStrategy, title: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border dark:bg-gray-700 dark:text-gray-100"
                 placeholder="Ex: Stratégie GTO 100bb"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Profile</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Profile</label>
               <select
                 required
                 value={currentStrategy.profile_id || ''}
                 onChange={e => setCurrentStrategy({...currentStrategy, profile_id: parseInt(e.target.value)})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
               >
                 <option value="">Sélectionner un profil</option>
                 {profiles.map(p => (
@@ -502,7 +548,7 @@ const Strategies: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Street</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Street</label>
               <select
                 value={currentStrategy.street || 'PREFLOP'}
                 onChange={e => {
@@ -520,7 +566,7 @@ const Strategies: React.FC = () => {
                     position_preflop: !isPreflop ? undefined : currentStrategy.position_preflop,
                   });
                 }}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
               >
                 <option value="PREFLOP">PREFLOP</option>
                 <option value="FLOP">FLOP</option>
@@ -529,7 +575,7 @@ const Strategies: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Stratégie Parente (Optionnel)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Stratégie Parente (Optionnel)</label>
               <select
                 value={currentStrategy.parent_strategy_id || ''}
                 onChange={e => {
@@ -543,7 +589,7 @@ const Strategies: React.FC = () => {
                     };
                   });
                 }}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
               >
                 <option value="">Aucune</option>
                 {strategies.filter(s => s.id !== currentStrategy.id).map(s => (
@@ -552,23 +598,23 @@ const Strategies: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Taille du Pot (bb)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Taille du Pot (bb)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={currentStrategy.pot_size_bb ?? ''}
                 onChange={e => setCurrentStrategy({...currentStrategy, pot_size_bb: e.target.value ? parseFloat(e.target.value) : undefined})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border dark:bg-gray-700 dark:text-gray-100"
                 placeholder="Ex: 5.5"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Action Hero</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Action Hero</label>
               <select
                 value={currentStrategy.hero_action || ''}
                 onChange={e => setCurrentStrategy({...currentStrategy, hero_action: e.target.value as any})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
               >
                 <option value="">Sélectionner une action</option>
                 <option value="BET">Bet / Raise</option>
@@ -578,33 +624,33 @@ const Strategies: React.FC = () => {
             </div>
             {(currentStrategy.hero_action === 'BET' || currentStrategy.hero_action === 'CALL') && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Taille de l'action</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Taille de l'action</label>
                 <input
                   type="text"
                   value={currentStrategy.action_size || ''}
                   onChange={e => setCurrentStrategy({...currentStrategy, action_size: e.target.value})}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border dark:bg-gray-700 dark:text-gray-100"
                   placeholder="Ex: 33%, 3bb, All-in"
                 />
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Action Vilain</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Action Vilain</label>
               <input
                 type="text"
                 value={currentStrategy.action_vilain || ''}
                 onChange={e => setCurrentStrategy({...currentStrategy, action_vilain: e.target.value})}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border dark:bg-gray-700 dark:text-gray-100"
                 placeholder="Ex: Open 2.5bb, Check, Bet 33%"
               />
             </div>
             {currentStrategy.street === 'PREFLOP' ? (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Position Preflop</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Position Preflop</label>
                 <select
                   value={currentStrategy.position_preflop || ''}
                   onChange={e => setCurrentStrategy({...currentStrategy, position_preflop: e.target.value as Strategy['position_preflop'] || undefined})}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
                 >
                   <option value="">Sélectionner une position</option>
                   <option value="UTG">UTG</option>
@@ -617,11 +663,11 @@ const Strategies: React.FC = () => {
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Position Relative</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Position Relative</label>
                 <select
                   value={currentStrategy.position_relative || ''}
                   onChange={e => setCurrentStrategy({...currentStrategy, position_relative: e.target.value as Strategy['position_relative'] || undefined})}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white dark:bg-gray-800 dark:text-gray-100"
                 >
                   <option value="">Sélectionner une position</option>
                   <option value="OOP">OOP (Out of Position)</option>
@@ -630,9 +676,9 @@ const Strategies: React.FC = () => {
               </div>
             )}
             <div className="col-span-1 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Strategy Data</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Strategy Data</label>
               {currentStrategy.street === 'PREFLOP' ? (
-                <div className="border rounded-md p-4 bg-white flex justify-center">
+                <div className="border border-gray-200 dark:border-gray-600 rounded-md p-4 bg-white dark:bg-gray-800 flex justify-center">
                   <RangeSelector
                     selectedHands={currentStrategy.strategy_data || {}}
                     onChange={(action) => {
@@ -645,13 +691,13 @@ const Strategies: React.FC = () => {
                   />
                 </div>
               ) : (
-                <div className="border rounded-md p-4 bg-white space-y-6">
-                  <div className="flex flex-wrap items-center gap-3 p-3 bg-blue-50 rounded-md border border-blue-100">
-                    <span className="text-sm font-medium text-gray-700">Pourcentage générique :</span>
+                <div className="border border-gray-200 dark:border-gray-600 rounded-md p-4 bg-white dark:bg-gray-800 space-y-6">
+                  <div className="flex flex-wrap items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-md border border-blue-100 dark:border-blue-800">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Pourcentage générique :</span>
                     <select
                       value={bulkPercentage}
                       onChange={(e) => setBulkPercentage(parseInt(e.target.value))}
-                      className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1.5 border bg-white text-sm"
+                      className="rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-1.5 border bg-white dark:bg-gray-800 dark:text-gray-100 text-sm"
                     >
                       {PERCENTAGE_OPTIONS.map(p => (
                         <option key={p} value={p}>{p}%</option>
@@ -669,11 +715,11 @@ const Strategies: React.FC = () => {
                       type="button"
                       onClick={deselectAllCategories}
                       disabled={selectedCategories.size === 0}
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Tout déselectionner
                     </button>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {selectedCategories.size > 0
                         ? `${selectedCategories.size} catégorie(s) sélectionnée(s)`
                         : 'Cochez des catégories pour appliquer en masse'}
@@ -699,7 +745,7 @@ const Strategies: React.FC = () => {
             <button
               type="button"
               onClick={() => { setIsEditing(false); resetBulkSelection(); }}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 dark:bg-gray-700"
             >
               Annuler
             </button>
@@ -713,9 +759,32 @@ const Strategies: React.FC = () => {
         </form>
       )}
 
-      <div className="bg-white shadow-md rounded-lg overflow-x-auto">
-        <table className="w-full table-fixed divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-x-auto">
+        {parentsWithChildren.size > 0 && (
+          <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={collapseAllNodes}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-600"
+              title="Masquer tous les sous-nœuds"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+              Tout replier
+            </button>
+            <button
+              type="button"
+              onClick={expandAllNodes}
+              disabled={collapsedNodes.size === 0}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Afficher tous les sous-nœuds"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+              Tout déplier
+            </button>
+          </div>
+        )}
+        <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
               <th className="w-[30%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Titre / ID</th>
               <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile</th>
@@ -724,21 +793,41 @@ const Strategies: React.FC = () => {
               <th className="w-[18%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {orderedStrategies.map(({ strategy, depth }) => (
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            {visibleStrategies.map(({ strategy, depth }) => {
+              const hasChildren = parentsWithChildren.has(strategy.id);
+              const isCollapsed = collapsedNodes.has(strategy.id);
+
+              return (
               <tr key={strategy.id}>
                 <td
-                  className="px-6 py-4 text-sm font-medium text-gray-900"
+                  className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100"
                   style={{ paddingLeft: `calc(1.5rem + ${depth * 1.25}rem)` }}
                 >
-                  {depth > 0 && (
-                    <span className="text-gray-300 mr-1.5 select-none">└</span>
-                  )}
-                  <span className="break-words">
-                    {strategy.title || `Stratégie #${strategy.id}`}
-                  </span>
+                  <div className="flex items-start gap-1">
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleNodeCollapse(strategy.id)}
+                        className="mt-0.5 shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                        title={isCollapsed ? 'Déplier les sous-nœuds' : 'Replier les sous-nœuds'}
+                      >
+                        {isCollapsed
+                          ? <ChevronRight className="w-4 h-4" />
+                          : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    ) : (
+                      <span className="w-4 shrink-0" />
+                    )}
+                    {depth > 0 && (
+                      <span className="text-gray-300 mr-0.5 select-none shrink-0">└</span>
+                    )}
+                    <span className="break-words">
+                      {strategy.title || `Stratégie #${strategy.id}`}
+                    </span>
+                  </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                   <div className="font-medium text-blue-600">{getProfileName(strategy.profile_id)}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -750,7 +839,7 @@ const Strategies: React.FC = () => {
                     {strategy.street}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {(() => {
                     const displayPot = computePotAtStrategy(strategy, strategies) ?? strategy.pot_size_bb;
                     return displayPot != null ? (
@@ -815,7 +904,8 @@ const Strategies: React.FC = () => {
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

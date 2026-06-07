@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React, { useState } from 'react';
 import {
   HandRecommendation,
@@ -61,17 +62,17 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
       >
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize }}>
           <thead>
-            <tr style={{ backgroundColor: '#f8f9fa', position: 'sticky', top: 0, zIndex: 1 }}>
-              <th style={{ padding: cellPadding, textAlign: 'left', borderBottom: '1px solid #e0e0e0' }}>Main</th>
-              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: '1px solid #e0e0e0' }}>Combos</th>
-              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: '1px solid #e0e0e0' }}>Eq%</th>
+            <tr style={{ backgroundColor: themeColors.surfaceAlt, position: 'sticky', top: 0, zIndex: 1 }}>
+              <th style={{ padding: cellPadding, textAlign: 'left', borderBottom: `1px solid ${themeColors.border}` }}>Main</th>
+              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: `1px solid ${themeColors.border}` }}>Combos</th>
+              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: `1px solid ${themeColors.border}` }}>Eq%</th>
               {actions.map(a => (
                 <th
                   key={a.id}
                   style={{
                     padding: cellPadding,
                     textAlign: 'center',
-                    borderBottom: '1px solid #e0e0e0',
+                    borderBottom: `1px solid ${themeColors.border}`,
                     minWidth: minActionWidth,
                     backgroundColor: `${a.color}18`,
                   }}
@@ -82,7 +83,7 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
                     padding: '2px 4px',
                     borderRadius: '3px',
                     backgroundColor: a.color,
-                    color: 'white',
+                    color: themeColors.surface,
                     fontWeight: 'bold',
                     fontSize: headerBadgeSize,
                     marginBottom: '2px',
@@ -91,7 +92,7 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
                   </div>
                 </th>
               ))}
-              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: '1px solid #e0e0e0' }}>→</th>
+              <th style={{ padding: cellPadding, textAlign: 'center', borderBottom: `1px solid ${themeColors.border}` }}>→</th>
             </tr>
           </thead>
           <tbody>
@@ -106,7 +107,7 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
                   onMouseMove={e => updateHover(rec.hand, e.clientX, e.clientY)}
                   style={{
                     cursor: 'default',
-                    backgroundColor: isHighlighted ? '#ebf5fb' : 'transparent',
+                    backgroundColor: isHighlighted ? themeColors.activeBg : 'transparent',
                   }}
                 >
                   <td style={{ padding: cellPadding, fontWeight: 'bold' }}>{rec.hand}</td>
@@ -123,7 +124,7 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
                         style={{
                           padding: cellPadding,
                           textAlign: 'center',
-                          color: ev > 0 ? '#27ae60' : ev < 0 ? '#e74c3c' : '#7f8c8d',
+                          color: ev > 0 ? '#27ae60' : ev < 0 ? '#e74c3c' : themeColors.textMuted,
                           fontWeight: isBest ? 'bold' : 'normal',
                           backgroundColor: isBest ? `${a.color}22` : 'transparent',
                           borderLeft: isBest ? `2px solid ${a.color}` : 'none',
@@ -140,7 +141,7 @@ export const HeroStrategyTable: React.FC<HeroStrategyTableProps> = ({
                         padding: '2px 6px',
                         borderRadius: '3px',
                         backgroundColor: style.color,
-                        color: 'white',
+                        color: themeColors.surface,
                         fontWeight: 'bold',
                         fontSize: actionBadgeSize,
                       }}>

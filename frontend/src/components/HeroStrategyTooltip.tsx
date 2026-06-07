@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 import { HeroComboGridTooltip, getComboTooltipDimensions } from './HeroComboGridTooltip';
 import {
@@ -48,7 +49,7 @@ export const HeroStrategyTooltip: React.FC<HeroStrategyTooltipProps> = ({
         top,
         zIndex: 2000,
         backgroundColor: '#ffffff',
-        color: '#2c3e50',
+        color: themeColors.text,
         padding: size === 'large' ? '22px 24px' : '12px 14px',
         borderRadius: size === 'large' ? '12px' : '10px',
         fontSize: size === 'large' ? '15px' : '12px',

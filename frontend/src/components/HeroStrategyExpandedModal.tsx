@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 import { RangeSelector } from './RangeSelector';
 import {
@@ -41,7 +42,7 @@ export const HeroStrategyExpandedModal: React.FC<HeroStrategyExpandedModalProps>
       >
         <div
           style={{
-            backgroundColor: 'white',
+            backgroundColor: themeColors.inputBg,
             padding: '20px',
             borderRadius: '12px',
             display: 'flex',
@@ -62,7 +63,7 @@ export const HeroStrategyExpandedModal: React.FC<HeroStrategyExpandedModalProps>
             marginBottom: '12px',
             gap: '12px',
           }}>
-            <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '18px' }}>
+            <h3 style={{ margin: 0, color: themeColors.text, fontSize: '18px' }}>
               Stratégie Hero — {currentStreet}
             </h3>
             <button
@@ -70,9 +71,9 @@ export const HeroStrategyExpandedModal: React.FC<HeroStrategyExpandedModalProps>
               onClick={onClose}
               style={{
                 padding: '6px 12px',
-                border: '1px solid #bdc3c7',
+                border: `1px solid ${themeColors.borderInput}`,
                 borderRadius: '6px',
-                backgroundColor: '#f8f9fa',
+                backgroundColor: themeColors.surfaceAlt,
                 cursor: 'pointer',
                 fontSize: '14px',
               }}

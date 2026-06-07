@@ -1,0 +1,16 @@
+export const themeColors = {
+  bg: 'var(--color-bg)',
+  surface: 'var(--color-surface)',
+  surfaceAlt: 'var(--color-surface-alt)',
+  text: 'var(--color-text)',
+  textMuted: 'var(--color-text-muted)',
+  border: 'var(--color-border)',
+  borderInput: 'var(--color-border-input)',
+  activeBg: 'var(--color-active-bg)',
+  activeText: 'var(--color-active-text)',
+  inputBg: 'var(--color-input-bg)',
+  filterActiveBg: 'var(--color-filter-active-bg)',
+  filterInactiveBg: 'var(--color-filter-inactive-bg)',
+  filterActiveBorder: 'var(--color-filter-active-border)',
+  filterActiveText: 'var(--color-filter-active-text)',
+} as const;

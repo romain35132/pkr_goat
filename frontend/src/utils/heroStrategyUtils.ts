@@ -762,6 +762,8 @@ export const computeWeightedAggregateEV = (
 export interface BuildActionsParams {
   currentStreet: string;
   selectedPreflopId: string;
+  /** Actions hero au point de décision courant (celles proposées dans l'arbre d'actions). */
+  decisionPointHeroStrategies: StrategyNode[];
   heroStrategiesAtStreet: StrategyNode[];
   allStrategies: StrategyNode[];
   baseRange: Record<string, number>;
@@ -822,10 +824,41 @@ const buildFoldAction = (
   opponentRangeStr,
 });
 
+const buildStrategyActionOptions = (
+  strategies: StrategyNode[],
+  allStrategies: StrategyNode[],
+  baseRange: Record<string, number>,
+  deadCards: string[],
+  getStrategyRange: (strategyData: unknown) => Record<string, number>,
+  potSize: number,
+  defaultOppRangeStr: string,
+  pot: number,
+): ActionOption[] => {
+  let betIndex = 0;
+  const strategyActions = strategies.map(strategy => {
+    const action = mapHeroAction(strategy.hero_action);
+    const opt = strategyToActionOption(
+      strategy,
+      allStrategies,
+      baseRange,
+      deadCards,
+      getStrategyRange,
+      potSize,
+      betIndex,
+      defaultOppRangeStr,
+    );
+    if (action === 'Bet/Raise') betIndex += 1;
+    return opt;
+  });
+
+  return assignDistinctColors([buildFoldAction(pot, defaultOppRangeStr), ...strategyActions]);
+};
+
 export const buildActionOptions = (params: BuildActionsParams): ActionOption[] => {
   const {
     currentStreet,
     selectedPreflopId,
+    decisionPointHeroStrategies,
     heroStrategiesAtStreet,
     allStrategies,
     baseRange,
@@ -842,51 +875,48 @@ export const buildActionOptions = (params: BuildActionsParams): ActionOption[] =
   const streetDb = streetToDb(currentStreet) as DbStreet;
   const pot = potSize || 0;
 
-  if (selectedPreflopId) {
+  if (currentStreet !== 'Preflop' && decisionPointHeroStrategies.length > 0) {
+    return buildStrategyActionOptions(
+      decisionPointHeroStrategies,
+      allStrategies,
+      baseRange,
+      deadCards,
+      getStrategyRange,
+      potSize,
+      defaultOppRangeStr,
+      pot,
+    );
+  }
+
+  if (selectedPreflopId && currentStreet === 'Preflop') {
     const rootId = parseInt(selectedPreflopId, 10);
     const strategyNodes = getAllHeroActionsInSubtree(allStrategies, rootId, streetDb);
 
     if (strategyNodes.length > 0) {
-      let betIndex = 0;
-      const strategyActions = strategyNodes.map(strategy => {
-        const action = mapHeroAction(strategy.hero_action);
-        const opt = strategyToActionOption(
-          strategy,
-          allStrategies,
-          baseRange,
-          deadCards,
-          getStrategyRange,
-          potSize,
-          betIndex,
-          defaultOppRangeStr,
-        );
-        if (action === 'Bet/Raise') betIndex += 1;
-        return opt;
-      });
-
-      return assignDistinctColors([buildFoldAction(pot, defaultOppRangeStr), ...strategyActions]);
-    }
-  }
-
-  if (currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0) {
-    let betIndex = 0;
-    const strategyActions = heroStrategiesAtStreet.map(strategy => {
-      const action = mapHeroAction(strategy.hero_action);
-      const opt = strategyToActionOption(
-        strategy,
+      return buildStrategyActionOptions(
+        strategyNodes,
         allStrategies,
         baseRange,
         deadCards,
         getStrategyRange,
         potSize,
-        betIndex,
         defaultOppRangeStr,
+        pot,
       );
-      if (action === 'Bet/Raise') betIndex += 1;
-      return opt;
-    });
+    }
+  }
 
-    return assignDistinctColors([buildFoldAction(pot, defaultOppRangeStr), ...strategyActions]);
+  if (currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0) {
+    return buildStrategyActionOptions(
+      heroStrategiesAtStreet,
+      allStrategies,
+      baseRange,
+      deadCards,
+      getStrategyRange,
+      potSize,
+      defaultOppRangeStr,
+      pot,
+    );
   }
 
   const preflopActions: ActionOption[] = [

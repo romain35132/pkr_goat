@@ -2,6 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-bg: #f0f2f5;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8f9fa;
+  --color-text: #2c3e50;
+  --color-text-muted: #7f8c8d;
+  --color-border: #e0e0e0;
+  --color-border-input: #bdc3c7;
+  --color-active-bg: #ebf5fb;
+  --color-active-text: #2980b9;
+  --color-input-bg: #ffffff;
+  --color-filter-active-bg: #e8f8f5;
+  --color-filter-inactive-bg: #ecf0f1;
+  --color-filter-active-border: #27ae60;
+  --color-filter-active-text: #1e8449;
+}
+
+.dark {
+  --color-bg: #111827;
+  --color-surface: #1f2937;
+  --color-surface-alt: #374151;
+  --color-text: #f3f4f6;
+  --color-text-muted: #9ca3af;
+  --color-border: #374151;
+  --color-border-input: #4b5563;
+  --color-active-bg: #1e3a5f;
+  --color-active-text: #60a5fa;
+  --color-input-bg: #374151;
+  --color-filter-active-bg: #064e3b;
+  --color-filter-inactive-bg: #374151;
+  --color-filter-active-border: #34d399;
+  --color-filter-active-text: #6ee7b7;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -9,8 +43,9 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f0f2f5;
-  color: #333;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 code {

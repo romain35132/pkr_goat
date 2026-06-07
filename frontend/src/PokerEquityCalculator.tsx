@@ -1,3 +1,4 @@
+import { themeColors } from './utils/themeColors';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { CardSelector } from './components/CardSelector';
 import { RangeSelector, getComboCount } from './components/RangeSelector';
@@ -15,6 +16,7 @@ import {
   formatVillainAction,
   formatHeroAction,
   getAllHeroNodesForStreet,
+  getHeroActionNodes,
   getVillainNodeForHero,
 } from './utils/strategyUtils';
 import { buildStrategyRange } from './utils/strategyRangeUtils';
@@ -47,7 +49,7 @@ const SUITS_MAP: Record<string, { color: string; icon: string }> = {
 };
 
 const SelectedCardsDisplay: React.FC<{ cards: string[] }> = ({ cards }) => {
-  if (cards.length === 0) return <strong style={{ color: '#2c3e50' }}>Aucune</strong>;
+  if (cards.length === 0) return <strong style={{ color: themeColors.text }}>Aucune</strong>;
   
   return (
     <div style={{ display: 'flex', gap: '5px', marginTop: '5px', flexWrap: 'wrap' }}>
@@ -61,8 +63,8 @@ const SelectedCardsDisplay: React.FC<{ cards: string[] }> = ({ cards }) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: 'white',
-            border: '1px solid #bdc3c7',
+            backgroundColor: themeColors.inputBg,
+            border: `1px solid ${themeColors.borderInput}`,
             borderRadius: '4px',
             padding: '2px 6px',
             color: suitInfo?.color || 'black',
@@ -226,6 +228,23 @@ const PokerEquityCalculator: React.FC = () => {
     if (!parentId || currentStreet === 'Preflop') return [];
     return getAllHeroNodesForStreet(allStrategies, parentId, currentStreetDb);
   }, [allStrategies, strategyPath, selectedStrategyId, currentStreet, currentStreetDb]);
+
+  const decisionPointHeroStrategies = useMemo(() => {
+    if (currentStreet === 'Preflop') return [];
+    const selectedHero = getSelectedStrategyForStreet(allStrategies, strategyPath, currentStreetDb);
+    const selectedVillain = selectedHero
+      ? getVillainNodeForHero(allStrategies, selectedHero)
+      : undefined;
+    const activeVillainId = pendingVillainNodeId ?? selectedVillain?.id ?? null;
+    if (!activeVillainId) return [];
+    return getHeroActionNodes(allStrategies, activeVillainId, currentStreetDb);
+  }, [
+    allStrategies,
+    strategyPath,
+    currentStreet,
+    currentStreetDb,
+    pendingVillainNodeId,
+  ]);
 
   const handleSelectVillainAction = useCallback((strategy: StrategyNode) => {
     setPendingVillainNodeId(strategy.id);
@@ -616,6 +635,7 @@ const PokerEquityCalculator: React.FC = () => {
       const actions = buildActionOptions({
         currentStreet,
         selectedPreflopId: selectedStrategyId,
+        decisionPointHeroStrategies,
         heroStrategiesAtStreet,
         allStrategies,
         baseRange: baseRangeForCurrentStreet,
@@ -659,7 +679,7 @@ const PokerEquityCalculator: React.FC = () => {
     return () => { isActive = false; };
   }, [
     heroMode, isHeroReady, effectiveHeroRange, currentRange, currentStreet,
-    heroStrategiesAtStreet, allStrategies, baseRangeForCurrentStreet, selectedStrategyId,
+    decisionPointHeroStrategies, heroStrategiesAtStreet, allStrategies, baseRangeForCurrentStreet, selectedStrategyId,
     baseCategories, activeCategories, boardCards.length, board,
     heroDeadCards, potSize, actionType, actionAmount, foldEquity,
   ]);
@@ -720,22 +740,22 @@ const PokerEquityCalculator: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', fontFamily: 'sans-serif', backgroundColor: '#f0f2f5' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', fontFamily: 'sans-serif', backgroundColor: themeColors.bg }}>
       
       {/* Top Row: My Hand, Board */}
-      <div style={{ display: 'flex', gap: '20px', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #e0e0e0', maxHeight: '190px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: '20px', padding: '15px 20px', backgroundColor: themeColors.surface, borderBottom: `1px solid ${themeColors.border}`, maxHeight: '190px', flexShrink: 0 }}>
         
         <div style={{ flex: '1.2', display: 'flex', flexDirection: 'column' }}>
           <div 
             onClick={() => setIsPlayerHandOpen(!isPlayerHandOpen)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: '5px' }}
           >
-            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
+            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: themeColors.text }}>
               {heroMode === 'combo'
                 ? `Votre Main (${playerCards.length}/2)`
                 : `Votre Range (${Object.keys(effectiveHeroRange).length} mains)`}
             </label>
-            <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
+            <span style={{ fontSize: '12px', color: themeColors.textMuted }}>
               {isPlayerHandOpen ? '▼ Replier' : '▶ Déplier'}
             </span>
           </div>
@@ -747,8 +767,8 @@ const PokerEquityCalculator: React.FC = () => {
               style={{
                 padding: '4px 12px',
                 borderRadius: '4px',
-                border: `1px solid ${heroMode === 'combo' ? '#3498db' : '#bdc3c7'}`,
-                backgroundColor: heroMode === 'combo' ? '#ebf5fb' : '#fff',
+                border: `1px solid ${heroMode === 'combo' ? '#3498db' : themeColors.borderInput}`,
+                backgroundColor: heroMode === 'combo' ? themeColors.activeBg : themeColors.surface,
                 cursor: 'pointer',
                 fontSize: '12px',
                 fontWeight: heroMode === 'combo' ? 'bold' : 'normal',
@@ -762,8 +782,8 @@ const PokerEquityCalculator: React.FC = () => {
               style={{
                 padding: '4px 12px',
                 borderRadius: '4px',
-                border: `1px solid ${heroMode === 'range' ? '#3498db' : '#bdc3c7'}`,
-                backgroundColor: heroMode === 'range' ? '#ebf5fb' : '#fff',
+                border: `1px solid ${heroMode === 'range' ? '#3498db' : themeColors.borderInput}`,
+                backgroundColor: heroMode === 'range' ? themeColors.activeBg : themeColors.surface,
                 cursor: 'pointer',
                 fontSize: '12px',
                 fontWeight: heroMode === 'range' ? 'bold' : 'normal',
@@ -792,8 +812,8 @@ const PokerEquityCalculator: React.FC = () => {
                   padding: '8px 14px',
                   borderRadius: '6px',
                   border: '1px solid #3498db',
-                  backgroundColor: '#ebf5fb',
-                  color: '#2980b9',
+                  backgroundColor: themeColors.activeBg,
+                  color: themeColors.activeText,
                   cursor: 'pointer',
                   fontSize: '13px',
                   fontWeight: 'bold',
@@ -804,20 +824,20 @@ const PokerEquityCalculator: React.FC = () => {
                   : 'Choisir un range…'}
               </button>
               {Object.keys(effectiveHeroRange).length > 0 && (
-                <span style={{ fontSize: '13px', color: '#7f8c8d' }}>
+                <span style={{ fontSize: '13px', color: themeColors.textMuted }}>
                   {heroRangeStr.length > 60 ? heroRangeStr.slice(0, 60) + '…' : heroRangeStr}
                 </span>
               )}
             </div>
           )}
           {!isPlayerHandOpen && heroMode === 'combo' && (
-            <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
+            <div style={{ fontSize: '14px', color: themeColors.textMuted }}>
               Sélection: <SelectedCardsDisplay cards={playerCards} />
             </div>
           )}
           {!isPlayerHandOpen && heroMode === 'range' && (
             <div
-              style={{ fontSize: '14px', color: '#7f8c8d', cursor: 'pointer' }}
+              style={{ fontSize: '14px', color: themeColors.textMuted, cursor: 'pointer' }}
               onClick={(e) => { e.stopPropagation(); setIsHeroRangeModalOpen(true); }}
             >
               {Object.keys(effectiveHeroRange).length > 0
@@ -832,10 +852,10 @@ const PokerEquityCalculator: React.FC = () => {
             onClick={() => setIsBoardOpen(!isBoardOpen)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: '5px' }}
           >
-            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: '#2c3e50' }}>
+            <label style={{ fontWeight: 'bold', margin: 0, cursor: 'pointer', color: themeColors.text }}>
               Board ({boardCards.length}/5)
             </label>
-            <span style={{ fontSize: '12px', color: '#7f8c8d' }}>
+            <span style={{ fontSize: '12px', color: themeColors.textMuted }}>
               {isBoardOpen ? '▼ Replier' : '▶ Déplier'}
             </span>
           </div>
@@ -851,7 +871,7 @@ const PokerEquityCalculator: React.FC = () => {
             </div>
           )}
           {!isBoardOpen && (
-            <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
+            <div style={{ fontSize: '14px', color: themeColors.textMuted }}>
               Sélection: <SelectedCardsDisplay cards={boardCards} />
             </div>
           )}
@@ -862,19 +882,19 @@ const PokerEquityCalculator: React.FC = () => {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         
         {/* Column 1: Range Selector */}
-        <div style={{ flex: '1.2', minWidth: '400px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#fff', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: '1.2', minWidth: '400px', padding: '20px', overflowY: 'auto', borderRight: `1px solid ${themeColors.border}`, backgroundColor: themeColors.surface, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <label style={{ fontWeight: 'bold', fontSize: '18px', color: '#2c3e50' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '18px', color: themeColors.text }}>
             Range Adverse - {currentStreet}
           </label>
-          <div style={{ fontSize: '14px', color: '#7f8c8d' }}>
+          <div style={{ fontSize: '14px', color: themeColors.textMuted }}>
             {Object.keys(currentRange).length} mains, {opponentCombos % 1 !== 0 ? opponentCombos.toFixed(1) : opponentCombos} combos
           </div>
         </div>
 
         {currentStreet === 'Preflop' && preflopStrategies.length > 0 && (
           <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', color: '#7f8c8d' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', color: themeColors.textMuted }}>
               Importer une stratégie Preflop :
             </label>
             <select
@@ -927,8 +947,8 @@ const PokerEquityCalculator: React.FC = () => {
                 width: '100%',
                 padding: '8px',
                 borderRadius: '4px',
-                border: '1px solid #bdc3c7',
-                backgroundColor: 'white',
+                border: `1px solid ${themeColors.borderInput}`,
+                backgroundColor: themeColors.inputBg,
               }}
             >
               <option value="">-- Sélectionner une stratégie --</option>
@@ -957,15 +977,15 @@ const PokerEquityCalculator: React.FC = () => {
           )}
         </div>
         
-        <div style={{ marginTop: '20px', fontSize: '12px', color: '#7f8c8d', maxHeight: '100px', overflowY: 'auto', wordBreak: 'break-all', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+        <div style={{ marginTop: '20px', fontSize: '12px', color: themeColors.textMuted, maxHeight: '100px', overflowY: 'auto', wordBreak: 'break-all', padding: '10px', backgroundColor: themeColors.surfaceAlt, borderRadius: '4px' }}>
           {opponentRange || 'Aucun range sélectionné'}
         </div>
       </div>
 
       {/* Column 2: Filters */}
-      <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', borderRight: '1px solid #e0e0e0', backgroundColor: '#fff' }}>
+      <div style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', borderRight: `1px solid ${themeColors.border}`, backgroundColor: themeColors.surface }}>
         
-        <h2 style={{ fontSize: '18px', marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Filtres</h2>
+        <h2 style={{ fontSize: '18px', marginTop: 0, color: themeColors.text, marginBottom: '20px' }}>Filtres</h2>
         {currentStreet !== 'Preflop' ? (
           <>
             <ActionTreeNavigator
@@ -1001,36 +1021,36 @@ const PokerEquityCalculator: React.FC = () => {
             />
           </>
         ) : (
-          <div style={{ color: '#7f8c8d', fontStyle: 'italic', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', textAlign: 'center' }}>
+          <div style={{ color: themeColors.textMuted, fontStyle: 'italic', padding: '20px', backgroundColor: themeColors.surfaceAlt, borderRadius: '8px', textAlign: 'center' }}>
             Les filtres seront disponibles au Flop, Turn et River.
           </div>
         )}
       </div>
 
         {/* Column 3: EV & Results */}
-        <form onSubmit={handleSubmit} style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: '20px', margin: 0 }}>
+        <form onSubmit={handleSubmit} style={{ flex: '1', minWidth: '350px', padding: '20px', overflowY: 'auto', backgroundColor: themeColors.surfaceAlt, display: 'flex', flexDirection: 'column', gap: '20px', margin: 0 }}>
           
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Paramètres d'EV</h3>
+          <div style={{ backgroundColor: themeColors.surface, borderRadius: '8px', padding: '15px', border: `1px solid ${themeColors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ marginTop: 0, color: themeColors.text, fontSize: '16px', marginBottom: '15px' }}>Paramètres d'EV</h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>Taille du Pot</label>
+                <label style={{ display: 'block', fontSize: '14px', color: themeColors.textMuted, marginBottom: '4px', fontWeight: 'bold' }}>Taille du Pot</label>
                 <input 
                   type="number" 
                   value={potSize || ''} 
                   onChange={(e) => setPotSize(Number(e.target.value))}
                   placeholder="Ex: 100"
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: `1px solid ${themeColors.borderInput}`, fontSize: '14px' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>Action Envisagée</label>
+                <label style={{ display: 'block', fontSize: '14px', color: themeColors.textMuted, marginBottom: '4px', fontWeight: 'bold' }}>Action Envisagée</label>
                 <select 
                   value={actionType} 
                   onChange={(e) => setActionType(e.target.value as any)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px', backgroundColor: 'white' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: `1px solid ${themeColors.borderInput}`, fontSize: '14px', backgroundColor: themeColors.inputBg }}
                 >
                   <option value="Check">Check</option>
                   <option value="Check/Fold">Fold</option>
@@ -1041,7 +1061,7 @@ const PokerEquityCalculator: React.FC = () => {
 
               {actionType !== 'Check/Fold' && actionType !== 'Check' && (
                 <div>
-                  <label style={{ display: 'block', fontSize: '14px', color: '#7f8c8d', marginBottom: '4px', fontWeight: 'bold' }}>
+                  <label style={{ display: 'block', fontSize: '14px', color: themeColors.textMuted, marginBottom: '4px', fontWeight: 'bold' }}>
                     Montant ({actionType === 'Call' ? 'à payer' : 'de la mise'})
                   </label>
                   <input 
@@ -1049,7 +1069,7 @@ const PokerEquityCalculator: React.FC = () => {
                     value={actionAmount || ''} 
                     onChange={(e) => setActionAmount(Number(e.target.value))}
                     placeholder="Ex: 50"
-                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #bdc3c7', fontSize: '14px' }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: `1px solid ${themeColors.borderInput}`, fontSize: '14px' }}
                   />
                 </div>
               )}
@@ -1059,7 +1079,7 @@ const PokerEquityCalculator: React.FC = () => {
                 return (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <label style={{ fontSize: '14px', color: '#7f8c8d', fontWeight: 'bold', margin: 0 }}>
+                      <label style={{ fontSize: '14px', color: themeColors.textMuted, fontWeight: 'bold', margin: 0 }}>
                         Fold Equity (%)
                       </label>
                       {currentStreet !== 'Preflop' && baseCombos > 0 && (
@@ -1077,9 +1097,9 @@ const PokerEquityCalculator: React.FC = () => {
                         width: '100%',
                         padding: '10px',
                         borderRadius: '6px',
-                        border: `1px solid ${feDirectProfit ? '#27ae60' : '#bdc3c7'}`,
+                        border: `1px solid ${feDirectProfit ? '#27ae60' : themeColors.borderInput}`,
                         fontSize: '14px',
-                        backgroundColor: feDirectProfit ? '#e8f8f5' : 'white',
+                        backgroundColor: feDirectProfit ? '#e8f8f5' : themeColors.surface,
                       }}
                     />
                   </div>
@@ -1094,7 +1114,7 @@ const PokerEquityCalculator: React.FC = () => {
             style={{
               padding: '15px',
               backgroundColor: loading ? '#95a5a6' : '#3498db',
-              color: 'white',
+              color: themeColors.surface,
               border: 'none',
               borderRadius: '8px',
               fontSize: '18px',
@@ -1108,13 +1128,13 @@ const PokerEquityCalculator: React.FC = () => {
           </button>
 
           {error && (
-            <div style={{ padding: '15px', backgroundColor: '#e74c3c', color: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(231, 76, 60, 0.3)' }}>
+            <div style={{ padding: '15px', backgroundColor: '#e74c3c', color: themeColors.surface, borderRadius: '8px', boxShadow: '0 2px 4px rgba(231, 76, 60, 0.3)' }}>
               <strong>Erreur:</strong> {error}
             </div>
           )}
 
           {result && (
-            <div style={{ padding: '20px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e0e0e0', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+            <div style={{ padding: '20px', backgroundColor: themeColors.surface, borderRadius: '8px', border: `1px solid ${themeColors.border}`, boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
               <h2 style={{ textAlign: 'center', margin: '0 0 15px 0', color: '#27ae60', fontSize: '24px' }}>
                 Équité : {(result.equity * 100).toFixed(2)}%
               </h2>
@@ -1135,11 +1155,11 @@ const PokerEquityCalculator: React.FC = () => {
                 }
 
                 return (
-                  <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: ev > 0 ? '#e8f8f5' : (ev < 0 ? '#fdedec' : '#f8f9fa'), borderRadius: '8px', border: `1px solid ${ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : '#bdc3c7')}` }}>
-                    <h3 style={{ margin: '0 0 10px 0', color: ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : '#2c3e50'), textAlign: 'center', fontSize: '18px' }}>
+                  <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: ev > 0 ? '#e8f8f5' : (ev < 0 ? '#fdedec' : themeColors.surfaceAlt), borderRadius: '8px', border: `1px solid ${ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : themeColors.borderInput)}` }}>
+                    <h3 style={{ margin: '0 0 10px 0', color: ev > 0 ? '#27ae60' : (ev < 0 ? '#e74c3c' : themeColors.text), textAlign: 'center', fontSize: '18px' }}>
                       Expected Value (EV) : {ev > 0 ? '+' : ''}{ev.toFixed(2)}
                     </h3>
-                    <div style={{ fontSize: '13px', color: '#7f8c8d', textAlign: 'center' }}>
+                    <div style={{ fontSize: '13px', color: themeColors.textMuted, textAlign: 'center' }}>
                       {actionType === 'Check/Fold' && "L'EV d'un fold est toujours de 0."}
                       {actionType === 'Check' && `Basé sur un pot de ${potSize} (réalisation de l'équité au showdown).`}
                       {actionType === 'Call' && `Basé sur un pot de ${potSize} et un call de ${actionAmount}.`}
@@ -1149,22 +1169,22 @@ const PokerEquityCalculator: React.FC = () => {
                 );
               })()}
 
-              <div style={{ height: '20px', backgroundColor: '#ecf0f1', borderRadius: '10px', overflow: 'hidden', marginBottom: '20px' }}>
+              <div style={{ height: '20px', backgroundColor: themeColors.border, borderRadius: '10px', overflow: 'hidden', marginBottom: '20px' }}>
                 <div style={{ width: `${result.equity * 100}%`, height: '100%', backgroundColor: '#27ae60', transition: 'width 0.5s ease-in-out' }}></div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', textAlign: 'center' }}>
-                <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #ecf0f1' }}>
-                  <div style={{ fontSize: '12px', color: '#7f8c8d', marginBottom: '4px' }}>Victoires</div>
-                  <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{result.wins.toLocaleString()}</div>
+                <div style={{ padding: '10px', backgroundColor: themeColors.surfaceAlt, borderRadius: '6px', border: `1px solid ${themeColors.border}` }}>
+                  <div style={{ fontSize: '12px', color: themeColors.textMuted, marginBottom: '4px' }}>Victoires</div>
+                  <div style={{ fontWeight: 'bold', color: themeColors.text }}>{result.wins.toLocaleString()}</div>
                 </div>
-                <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #ecf0f1' }}>
-                  <div style={{ fontSize: '12px', color: '#7f8c8d', marginBottom: '4px' }}>Égalités</div>
-                  <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{result.ties.toLocaleString()}</div>
+                <div style={{ padding: '10px', backgroundColor: themeColors.surfaceAlt, borderRadius: '6px', border: `1px solid ${themeColors.border}` }}>
+                  <div style={{ fontSize: '12px', color: themeColors.textMuted, marginBottom: '4px' }}>Égalités</div>
+                  <div style={{ fontWeight: 'bold', color: themeColors.text }}>{result.ties.toLocaleString()}</div>
                 </div>
-                <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px solid #ecf0f1' }}>
-                  <div style={{ fontSize: '12px', color: '#7f8c8d', marginBottom: '4px' }}>Défaites</div>
-                  <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{result.losses.toLocaleString()}</div>
+                <div style={{ padding: '10px', backgroundColor: themeColors.surfaceAlt, borderRadius: '6px', border: `1px solid ${themeColors.border}` }}>
+                  <div style={{ fontSize: '12px', color: themeColors.textMuted, marginBottom: '4px' }}>Défaites</div>
+                  <div style={{ fontWeight: 'bold', color: themeColors.text }}>{result.losses.toLocaleString()}</div>
                 </div>
               </div>
               
@@ -1176,7 +1196,7 @@ const PokerEquityCalculator: React.FC = () => {
 
           {/* All Strategies Results */}
           {heroMode === 'range' && (
-            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ backgroundColor: themeColors.surface, borderRadius: '8px', padding: '15px', border: `1px solid ${themeColors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
               <HeroStrategyMatrix
                 recommendations={heroRecommendations}
                 actions={heroActionOptions}
@@ -1192,8 +1212,8 @@ const PokerEquityCalculator: React.FC = () => {
           )}
 
           {currentStreet !== 'Preflop' && heroStrategiesAtStreet.length > 0 && isHeroReady && (
-            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e0e0e0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0, color: '#2c3e50', fontSize: '16px', marginBottom: '15px' }}>Toutes les lignes ({currentStreet})</h3>
+            <div style={{ backgroundColor: themeColors.surface, borderRadius: '8px', padding: '15px', border: `1px solid ${themeColors.border}`, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ marginTop: 0, color: themeColors.text, fontSize: '16px', marginBottom: '15px' }}>Toutes les lignes ({currentStreet})</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {heroStrategiesAtStreet.map(strategy => {
                   const res = strategiesResults[strategy.id];
@@ -1212,27 +1232,27 @@ const PokerEquityCalculator: React.FC = () => {
                       style={{
                         padding: '10px',
                         borderRadius: '6px',
-                        border: `1px solid ${isSelected ? '#27ae60' : '#ecf0f1'}`,
-                        backgroundColor: isSelected ? '#e8f8f5' : '#f8f9fa',
+                        border: `1px solid ${isSelected ? '#27ae60' : themeColors.border}`,
+                        backgroundColor: isSelected ? '#e8f8f5' : themeColors.surfaceAlt,
                         cursor: 'pointer',
                       }}
                     >
-                      <div style={{ fontWeight: 'bold', color: '#2c3e50', marginBottom: '5px' }}>
+                      <div style={{ fontWeight: 'bold', color: themeColors.text, marginBottom: '5px' }}>
                         {villain ? `${formatVillainAction(villain)} → ` : ''}{formatHeroAction(strategy)}
                       </div>
                       {res?.loading ? (
-                        <div style={{ fontSize: '13px', color: '#7f8c8d' }}>Calcul en cours...</div>
+                        <div style={{ fontSize: '13px', color: themeColors.textMuted }}>Calcul en cours...</div>
                       ) : res?.error ? (
                         <div style={{ fontSize: '13px', color: '#e74c3c' }}>Erreur: {res.error}</div>
                       ) : res ? (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                           <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Eq: {(res.equity * 100).toFixed(1)}%</span>
-                          <span style={{ color: res.ev > 0 ? '#27ae60' : (res.ev < 0 ? '#e74c3c' : '#7f8c8d'), fontWeight: 'bold' }}>
+                          <span style={{ color: res.ev > 0 ? '#27ae60' : (res.ev < 0 ? '#e74c3c' : themeColors.textMuted), fontWeight: 'bold' }}>
                             EV: {res.ev > 0 ? '+' : ''}{res.ev.toFixed(2)}
                           </span>
                         </div>
                       ) : (
-                        <div style={{ fontSize: '13px', color: '#7f8c8d' }}>En attente...</div>
+                        <div style={{ fontSize: '13px', color: themeColors.textMuted }}>En attente...</div>
                       )}
                     </div>
                   );

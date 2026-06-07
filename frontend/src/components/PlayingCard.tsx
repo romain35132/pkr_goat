@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 
 export const SUITS_MAP: Record<string, { color: string; icon: string }> = {
@@ -16,7 +17,7 @@ export const PlayingCard: React.FC<PlayingCardProps> = ({ card, size = 'md' }) =
   if (card.length !== 2) return <span>{card}</span>;
   const value = card[0];
   const suit = card[1];
-  const suitInfo = SUITS_MAP[suit] ?? { color: '#2c3e50', icon: suit };
+  const suitInfo = SUITS_MAP[suit] ?? { color: themeColors.text, icon: suit };
 
   const fontSize = size === 'sm' ? '13px' : '15px';
   const iconSize = size === 'sm' ? '14px' : '16px';

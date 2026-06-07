@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { CategoryResult, CategorizedHand, CategoryDetailModal, getHandGroup } from './CategoryDetailModal';
 import { isCategoryVisible } from '../utils/categoryUtils';
@@ -214,9 +215,9 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
     }
   }, [aggregatedGroupWeights, allowedHands, onRangeGroupsChange]);
 
-  if (loading) return <div>Chargement des catégories...</div>;
-  if (error) return <div style={{ color: 'red' }}>{error}</div>;
-  if (categories.length === 0) return <div>Aucune main classifiée.</div>;
+  if (loading) return <div style={{ color: themeColors.textMuted }}>Chargement des catégories...</div>;
+  if (error) return <div style={{ color: '#e74c3c' }}>{error}</div>;
+  if (categories.length === 0) return <div style={{ color: themeColors.textMuted }}>Aucune main classifiée.</div>;
 
   const categoryNames: Record<string, string> = {
     'StraightFlush': 'Quinte Flush',
@@ -283,14 +284,15 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
         style={{
           padding: '8px 12px',
           border: '1px solid',
-          borderColor: isActive ? '#27ae60' : '#bdc3c7',
-          backgroundColor: isActive ? '#e8f8f5' : '#ecf0f1',
+          borderColor: isActive ? themeColors.filterActiveBorder : themeColors.borderInput,
+          backgroundColor: isActive ? themeColors.filterActiveBg : themeColors.filterInactiveBg,
+          color: themeColors.text,
           borderRadius: '4px',
           cursor: 'pointer',
           userSelect: 'none',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '8px',
         }}
       >
         <input 
@@ -306,18 +308,18 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ baseRange, board
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <p style={{ margin: 0, fontSize: '14px', color: '#7f8c8d' }}>
+      <p style={{ margin: 0, fontSize: '14px', color: themeColors.textMuted }}>
         Filtrez les mains qui continuent (clic droit pour le détail)
       </p>
 
-      <p style={{ margin: 0, fontSize: '14px', color: '#2c3e50', fontWeight: 'bold' }}>
+      <p style={{ margin: 0, fontSize: '14px', color: themeColors.text, fontWeight: 'bold' }}>
         Mains faites (pair+)
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
         {mainsFaites.map(renderCategory)}
       </div>
 
-      <p style={{ margin: 0, fontSize: '14px', color: '#2c3e50', fontWeight: 'bold' }}>
+      <p style={{ margin: 0, fontSize: '14px', color: themeColors.text, fontWeight: 'bold' }}>
         Le reste
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>

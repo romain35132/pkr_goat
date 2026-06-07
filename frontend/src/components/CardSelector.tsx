@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React from 'react';
 
 interface CardSelectorProps {
@@ -56,9 +57,9 @@ export const CardSelector: React.FC<CardSelectorProps> = ({
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: isSelected ? '#f1c40f' : isDisabled ? '#ecf0f1' : 'white',
+                  backgroundColor: isSelected ? '#f1c40f' : isDisabled ? '#ecf0f1' : themeColors.surface,
                   color: suit.color,
-                  border: `1px solid ${isSelected ? '#f39c12' : '#bdc3c7'}`,
+                  border: `1px solid ${isSelected ? '#f39c12' : themeColors.borderInput}`,
                   borderRadius: '4px',
                   cursor: isDisabled ? 'not-allowed' : 'pointer',
                   fontSize: '13px',

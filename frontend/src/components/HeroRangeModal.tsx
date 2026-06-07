@@ -1,3 +1,4 @@
+import { themeColors } from '../utils/themeColors';
 import React, { useState, useEffect, useMemo } from 'react';
 import { RangeSelector, getComboCount } from './RangeSelector';
 
@@ -55,7 +56,7 @@ export const HeroRangeModal: React.FC<HeroRangeModalProps> = ({
     >
       <div
         style={{
-          backgroundColor: 'white',
+          backgroundColor: themeColors.inputBg,
           padding: '24px',
           borderRadius: '10px',
           display: 'flex',
@@ -68,10 +69,10 @@ export const HeroRangeModal: React.FC<HeroRangeModalProps> = ({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0, marginBottom: '8px', color: '#2c3e50' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '8px', color: themeColors.text }}>
           Sélectionner votre Range Hero
         </h3>
-        <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#7f8c8d' }}>
+        <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: themeColors.textMuted }}>
           {handCount} main{handCount !== 1 ? 's' : ''} — {comboCount % 1 !== 0 ? comboCount.toFixed(1) : comboCount} combos
         </p>
 
@@ -95,9 +96,9 @@ export const HeroRangeModal: React.FC<HeroRangeModalProps> = ({
             style={{
               padding: '10px 18px',
               cursor: 'pointer',
-              border: '1px solid #bdc3c7',
+              border: `1px solid ${themeColors.borderInput}`,
               borderRadius: '6px',
-              backgroundColor: '#f8f9fa',
+              backgroundColor: themeColors.surfaceAlt,
               fontSize: '14px',
             }}
           >
@@ -112,7 +113,7 @@ export const HeroRangeModal: React.FC<HeroRangeModalProps> = ({
               border: 'none',
               borderRadius: '6px',
               backgroundColor: '#3498db',
-              color: 'white',
+              color: themeColors.surface,
               fontSize: '14px',
               fontWeight: 'bold',
             }}
